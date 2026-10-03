@@ -1,0 +1,12 @@
+node_modules/
+dist/
+.data/
+*.log
+.DS_Store
+infra/.terraform/
+infra/*.tfstate*
+infra/.terraform.lock.hcl.bak
+infra/build/
+test-results/
+playwright-report/
+.env
