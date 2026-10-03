@@ -1,0 +1,204 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 500 700" fill="currentColor" role="img" aria-label="Heavy infantry">
+  <defs>
+    <filter id="rough" x="-5%" y="-5%" width="110%" height="110%">
+      <feTurbulence type="fractalNoise" baseFrequency="0.05" numOctaves="3" seed="11" result="t"/>
+      <feDisplacementMap in="SourceGraphic" in2="t" scale="4" xChannelSelector="R" yChannelSelector="G" result="d"/>
+      <feTurbulence type="fractalNoise" baseFrequency="0.8" numOctaves="2" seed="3" result="g"/>
+      <feColorMatrix in="g" type="matrix" values="0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  0 0 0 0.9 0.38" result="ga"/>
+      <feComposite in="d" in2="ga" operator="in"/>
+    </filter>
+    <linearGradient id="haze" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="currentColor" stop-opacity="0.04"/>
+      <stop offset="0.7" stop-color="currentColor" stop-opacity="0.2"/>
+      <stop offset="1" stop-color="currentColor" stop-opacity="0.45"/>
+    </linearGradient>
+    <radialGradient id="sun" cx="0.5" cy="0.2" r="0.55">
+      <stop offset="0" stop-color="currentColor" stop-opacity="0.3"/>
+      <stop offset="1" stop-color="currentColor" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+  <rect width="500" height="700" fill="url(#haze)"/>
+  <rect width="500" height="700" fill="url(#sun)"/>
+  <g filter="url(#rough)">
+    <g opacity="0.45"><rect x="58" y="60" width="4" height="380"/><path d="M60 26 L67 62 L60 68 L53 62 Z"/></g><g opacity="0.45"><rect x="148" y="90" width="4" height="380"/><path d="M150 56 L157 92 L150 98 L143 92 Z"/></g><g opacity="0.45"><rect x="248" y="60" width="4" height="380"/><path d="M250 26 L257 62 L250 68 L243 62 Z"/></g><g opacity="0.45"><rect x="348" y="90" width="4" height="380"/><path d="M350 56 L357 92 L350 98 L343 92 Z"/></g><g opacity="0.45"><rect x="438" y="60" width="4" height="380"/><path d="M440 26 L447 62 L440 68 L433 62 Z"/></g>
+    <!-- rear rank -->
+    <g transform="translate(75 300) scale(0.62)" opacity="0.42">
+      <path d="M-30 0 C-34 -40 -20 -74 0 -76 C20 -74 34 -40 30 0 L22 8 L22 34 C14 42 -14 42 -22 34 L-22 8 Z"/>
+      <path d="M-4 -78 C-2 -100 12 -112 30 -110 C20 -104 14 -92 14 -76 Z"/>
+      <g fill="#000" fill-opacity=".45"><rect x="-22" y="-6" width="44" height="9"/><rect x="-3" y="-6" width="6" height="36"/></g>
+      <g fill="#000" fill-opacity=".3"><path d="M4 -76 C20 -74 34 -40 30 0 L22 8 L22 34 C18 38 10 40 4 40 Z"/></g>
+      <path d="M-34 38 C-70 36 -86 70 -80 104 L80 104 C86 70 70 36 34 38 C20 46 -20 46 -34 38 Z"/>
+      <path d="M-34 38 C-70 36 -86 70 -80 104 L-60 104 C-62 74 -50 50 -34 38 Z" fill="#fff" fill-opacity=".18"/>
+    </g><g transform="translate(165 300) scale(0.62)" opacity="0.42">
+      <path d="M-30 0 C-34 -40 -20 -74 0 -76 C20 -74 34 -40 30 0 L22 8 L22 34 C14 42 -14 42 -22 34 L-22 8 Z"/>
+      <path d="M-4 -78 C-2 -100 12 -112 30 -110 C20 -104 14 -92 14 -76 Z"/>
+      <g fill="#000" fill-opacity=".45"><rect x="-22" y="-6" width="44" height="9"/><rect x="-3" y="-6" width="6" height="36"/></g>
+      <g fill="#000" fill-opacity=".3"><path d="M4 -76 C20 -74 34 -40 30 0 L22 8 L22 34 C18 38 10 40 4 40 Z"/></g>
+      <path d="M-34 38 C-70 36 -86 70 -80 104 L80 104 C86 70 70 36 34 38 C20 46 -20 46 -34 38 Z"/>
+      <path d="M-34 38 C-70 36 -86 70 -80 104 L-60 104 C-62 74 -50 50 -34 38 Z" fill="#fff" fill-opacity=".18"/>
+    </g><g transform="translate(255 300) scale(0.62)" opacity="0.42">
+      <path d="M-30 0 C-34 -40 -20 -74 0 -76 C20 -74 34 -40 30 0 L22 8 L22 34 C14 42 -14 42 -22 34 L-22 8 Z"/>
+      <path d="M-4 -78 C-2 -100 12 -112 30 -110 C20 -104 14 -92 14 -76 Z"/>
+      <g fill="#000" fill-opacity=".45"><rect x="-22" y="-6" width="44" height="9"/><rect x="-3" y="-6" width="6" height="36"/></g>
+      <g fill="#000" fill-opacity=".3"><path d="M4 -76 C20 -74 34 -40 30 0 L22 8 L22 34 C18 38 10 40 4 40 Z"/></g>
+      <path d="M-34 38 C-70 36 -86 70 -80 104 L80 104 C86 70 70 36 34 38 C20 46 -20 46 -34 38 Z"/>
+      <path d="M-34 38 C-70 36 -86 70 -80 104 L-60 104 C-62 74 -50 50 -34 38 Z" fill="#fff" fill-opacity=".18"/>
+    </g><g transform="translate(345 300) scale(0.62)" opacity="0.42">
+      <path d="M-30 0 C-34 -40 -20 -74 0 -76 C20 -74 34 -40 30 0 L22 8 L22 34 C14 42 -14 42 -22 34 L-22 8 Z"/>
+      <path d="M-4 -78 C-2 -100 12 -112 30 -110 C20 -104 14 -92 14 -76 Z"/>
+      <g fill="#000" fill-opacity=".45"><rect x="-22" y="-6" width="44" height="9"/><rect x="-3" y="-6" width="6" height="36"/></g>
+      <g fill="#000" fill-opacity=".3"><path d="M4 -76 C20 -74 34 -40 30 0 L22 8 L22 34 C18 38 10 40 4 40 Z"/></g>
+      <path d="M-34 38 C-70 36 -86 70 -80 104 L80 104 C86 70 70 36 34 38 C20 46 -20 46 -34 38 Z"/>
+      <path d="M-34 38 C-70 36 -86 70 -80 104 L-60 104 C-62 74 -50 50 -34 38 Z" fill="#fff" fill-opacity=".18"/>
+    </g><g transform="translate(435 300) scale(0.62)" opacity="0.42">
+      <path d="M-30 0 C-34 -40 -20 -74 0 -76 C20 -74 34 -40 30 0 L22 8 L22 34 C14 42 -14 42 -22 34 L-22 8 Z"/>
+      <path d="M-4 -78 C-2 -100 12 -112 30 -110 C20 -104 14 -92 14 -76 Z"/>
+      <g fill="#000" fill-opacity=".45"><rect x="-22" y="-6" width="44" height="9"/><rect x="-3" y="-6" width="6" height="36"/></g>
+      <g fill="#000" fill-opacity=".3"><path d="M4 -76 C20 -74 34 -40 30 0 L22 8 L22 34 C18 38 10 40 4 40 Z"/></g>
+      <path d="M-34 38 C-70 36 -86 70 -80 104 L80 104 C86 70 70 36 34 38 C20 46 -20 46 -34 38 Z"/>
+      <path d="M-34 38 C-70 36 -86 70 -80 104 L-60 104 C-62 74 -50 50 -34 38 Z" fill="#fff" fill-opacity=".18"/>
+    </g>
+    <g transform="translate(75 372)" opacity="0.42">
+      <path d="M-46.0 0 Q0 -22 46.0 0 L46.0 187.2 Q46.0 239.20000000000002 0 260 Q-46.0 239.20000000000002 -46.0 187.2 Z"/>
+      <path d="M-37.0 12 Q0 -4 37.0 12 L37.0 182.0 Q37.0 223.6 0 248 Q-37.0 223.6 -37.0 182.0 Z" fill="#000" fill-opacity=".30"/>
+      <path d="M0 4 L0 252" stroke="#fff" stroke-opacity=".28" stroke-width="5"/>
+      <path d="M0 4 L0 252" stroke="#000" stroke-opacity=".3" stroke-width="2" transform="translate(5 0)"/>
+      <circle cx="0" cy="88.4" r="10.12" fill="#fff" fill-opacity=".25"/>
+      <circle cx="0" cy="88.4" r="6.8999999999999995" fill="#000" fill-opacity=".35"/>
+      <path d="M0.0 88.4 m-46.0 0" />
+      <path d="M-43.0 8 Q0 -10 43.0 8" stroke="#fff" stroke-opacity=".3" stroke-width="3" fill="none"/>
+      <path d="M43.0 8 L43.0 187.2" stroke="#000" stroke-opacity=".35" stroke-width="5" fill="none"/>
+    </g><g transform="translate(165 372)" opacity="0.42">
+      <path d="M-46.0 0 Q0 -22 46.0 0 L46.0 187.2 Q46.0 239.20000000000002 0 260 Q-46.0 239.20000000000002 -46.0 187.2 Z"/>
+      <path d="M-37.0 12 Q0 -4 37.0 12 L37.0 182.0 Q37.0 223.6 0 248 Q-37.0 223.6 -37.0 182.0 Z" fill="#000" fill-opacity=".30"/>
+      <path d="M0 4 L0 252" stroke="#fff" stroke-opacity=".28" stroke-width="5"/>
+      <path d="M0 4 L0 252" stroke="#000" stroke-opacity=".3" stroke-width="2" transform="translate(5 0)"/>
+      <circle cx="0" cy="88.4" r="10.12" fill="#fff" fill-opacity=".25"/>
+      <circle cx="0" cy="88.4" r="6.8999999999999995" fill="#000" fill-opacity=".35"/>
+      <path d="M0.0 88.4 m-46.0 0" />
+      <path d="M-43.0 8 Q0 -10 43.0 8" stroke="#fff" stroke-opacity=".3" stroke-width="3" fill="none"/>
+      <path d="M43.0 8 L43.0 187.2" stroke="#000" stroke-opacity=".35" stroke-width="5" fill="none"/>
+    </g><g transform="translate(255 372)" opacity="0.42">
+      <path d="M-46.0 0 Q0 -22 46.0 0 L46.0 187.2 Q46.0 239.20000000000002 0 260 Q-46.0 239.20000000000002 -46.0 187.2 Z"/>
+      <path d="M-37.0 12 Q0 -4 37.0 12 L37.0 182.0 Q37.0 223.6 0 248 Q-37.0 223.6 -37.0 182.0 Z" fill="#000" fill-opacity=".30"/>
+      <path d="M0 4 L0 252" stroke="#fff" stroke-opacity=".28" stroke-width="5"/>
+      <path d="M0 4 L0 252" stroke="#000" stroke-opacity=".3" stroke-width="2" transform="translate(5 0)"/>
+      <circle cx="0" cy="88.4" r="10.12" fill="#fff" fill-opacity=".25"/>
+      <circle cx="0" cy="88.4" r="6.8999999999999995" fill="#000" fill-opacity=".35"/>
+      <path d="M0.0 88.4 m-46.0 0" />
+      <path d="M-43.0 8 Q0 -10 43.0 8" stroke="#fff" stroke-opacity=".3" stroke-width="3" fill="none"/>
+      <path d="M43.0 8 L43.0 187.2" stroke="#000" stroke-opacity=".35" stroke-width="5" fill="none"/>
+    </g><g transform="translate(345 372)" opacity="0.42">
+      <path d="M-46.0 0 Q0 -22 46.0 0 L46.0 187.2 Q46.0 239.20000000000002 0 260 Q-46.0 239.20000000000002 -46.0 187.2 Z"/>
+      <path d="M-37.0 12 Q0 -4 37.0 12 L37.0 182.0 Q37.0 223.6 0 248 Q-37.0 223.6 -37.0 182.0 Z" fill="#000" fill-opacity=".30"/>
+      <path d="M0 4 L0 252" stroke="#fff" stroke-opacity=".28" stroke-width="5"/>
+      <path d="M0 4 L0 252" stroke="#000" stroke-opacity=".3" stroke-width="2" transform="translate(5 0)"/>
+      <circle cx="0" cy="88.4" r="10.12" fill="#fff" fill-opacity=".25"/>
+      <circle cx="0" cy="88.4" r="6.8999999999999995" fill="#000" fill-opacity=".35"/>
+      <path d="M0.0 88.4 m-46.0 0" />
+      <path d="M-43.0 8 Q0 -10 43.0 8" stroke="#fff" stroke-opacity=".3" stroke-width="3" fill="none"/>
+      <path d="M43.0 8 L43.0 187.2" stroke="#000" stroke-opacity=".35" stroke-width="5" fill="none"/>
+    </g><g transform="translate(435 372)" opacity="0.42">
+      <path d="M-46.0 0 Q0 -22 46.0 0 L46.0 187.2 Q46.0 239.20000000000002 0 260 Q-46.0 239.20000000000002 -46.0 187.2 Z"/>
+      <path d="M-37.0 12 Q0 -4 37.0 12 L37.0 182.0 Q37.0 223.6 0 248 Q-37.0 223.6 -37.0 182.0 Z" fill="#000" fill-opacity=".30"/>
+      <path d="M0 4 L0 252" stroke="#fff" stroke-opacity=".28" stroke-width="5"/>
+      <path d="M0 4 L0 252" stroke="#000" stroke-opacity=".3" stroke-width="2" transform="translate(5 0)"/>
+      <circle cx="0" cy="88.4" r="10.12" fill="#fff" fill-opacity=".25"/>
+      <circle cx="0" cy="88.4" r="6.8999999999999995" fill="#000" fill-opacity=".35"/>
+      <path d="M0.0 88.4 m-46.0 0" />
+      <path d="M-43.0 8 Q0 -10 43.0 8" stroke="#fff" stroke-opacity=".3" stroke-width="3" fill="none"/>
+      <path d="M43.0 8 L43.0 187.2" stroke="#000" stroke-opacity=".35" stroke-width="5" fill="none"/>
+    </g>
+    <!-- front rank -->
+    <g transform="translate(60 330) scale(0.9)" opacity="1">
+      <path d="M-30 0 C-34 -40 -20 -74 0 -76 C20 -74 34 -40 30 0 L22 8 L22 34 C14 42 -14 42 -22 34 L-22 8 Z"/>
+      <path d="M-4 -78 C-2 -100 12 -112 30 -110 C20 -104 14 -92 14 -76 Z"/>
+      <g fill="#000" fill-opacity=".45"><rect x="-22" y="-6" width="44" height="9"/><rect x="-3" y="-6" width="6" height="36"/></g>
+      <g fill="#000" fill-opacity=".3"><path d="M4 -76 C20 -74 34 -40 30 0 L22 8 L22 34 C18 38 10 40 4 40 Z"/></g>
+      <path d="M-34 38 C-70 36 -86 70 -80 104 L80 104 C86 70 70 36 34 38 C20 46 -20 46 -34 38 Z"/>
+      <path d="M-34 38 C-70 36 -86 70 -80 104 L-60 104 C-62 74 -50 50 -34 38 Z" fill="#fff" fill-opacity=".18"/>
+    </g><g transform="translate(250 330) scale(0.9)" opacity="1">
+      <path d="M-30 0 C-34 -40 -20 -74 0 -76 C20 -74 34 -40 30 0 L22 8 L22 34 C14 42 -14 42 -22 34 L-22 8 Z"/>
+      <path d="M-4 -78 C-2 -100 12 -112 30 -110 C20 -104 14 -92 14 -76 Z"/>
+      <g fill="#000" fill-opacity=".45"><rect x="-22" y="-6" width="44" height="9"/><rect x="-3" y="-6" width="6" height="36"/></g>
+      <g fill="#000" fill-opacity=".3"><path d="M4 -76 C20 -74 34 -40 30 0 L22 8 L22 34 C18 38 10 40 4 40 Z"/></g>
+      <path d="M-34 38 C-70 36 -86 70 -80 104 L80 104 C86 70 70 36 34 38 C20 46 -20 46 -34 38 Z"/>
+      <path d="M-34 38 C-70 36 -86 70 -80 104 L-60 104 C-62 74 -50 50 -34 38 Z" fill="#fff" fill-opacity=".18"/>
+    </g><g transform="translate(440 330) scale(0.9)" opacity="1">
+      <path d="M-30 0 C-34 -40 -20 -74 0 -76 C20 -74 34 -40 30 0 L22 8 L22 34 C14 42 -14 42 -22 34 L-22 8 Z"/>
+      <path d="M-4 -78 C-2 -100 12 -112 30 -110 C20 -104 14 -92 14 -76 Z"/>
+      <g fill="#000" fill-opacity=".45"><rect x="-22" y="-6" width="44" height="9"/><rect x="-3" y="-6" width="6" height="36"/></g>
+      <g fill="#000" fill-opacity=".3"><path d="M4 -76 C20 -74 34 -40 30 0 L22 8 L22 34 C18 38 10 40 4 40 Z"/></g>
+      <path d="M-34 38 C-70 36 -86 70 -80 104 L80 104 C86 70 70 36 34 38 C20 46 -20 46 -34 38 Z"/>
+      <path d="M-34 38 C-70 36 -86 70 -80 104 L-60 104 C-62 74 -50 50 -34 38 Z" fill="#fff" fill-opacity=".18"/>
+    </g>
+    <g transform="translate(60 420)" opacity="1">
+      <path d="M-75.0 0 Q0 -22 75.0 0 L75.0 216.0 Q75.0 276.0 0 300 Q-75.0 276.0 -75.0 216.0 Z"/>
+      <path d="M-66.0 12 Q0 -4 66.0 12 L66.0 210.0 Q66.0 258.0 0 288 Q-66.0 258.0 -66.0 210.0 Z" fill="#000" fill-opacity=".30"/>
+      <path d="M0 4 L0 292" stroke="#fff" stroke-opacity=".28" stroke-width="5"/>
+      <path d="M0 4 L0 292" stroke="#000" stroke-opacity=".3" stroke-width="2" transform="translate(5 0)"/>
+      <circle cx="0" cy="102.00000000000001" r="16.5" fill="#fff" fill-opacity=".25"/>
+      <circle cx="0" cy="102.00000000000001" r="11.25" fill="#000" fill-opacity=".35"/>
+      <path d="M0.0 102.00000000000001 m-75.0 0" />
+      <path d="M-72.0 8 Q0 -10 72.0 8" stroke="#fff" stroke-opacity=".3" stroke-width="3" fill="none"/>
+      <path d="M72.0 8 L72.0 216.0" stroke="#000" stroke-opacity=".35" stroke-width="5" fill="none"/>
+    </g><g transform="translate(250 420)" opacity="1">
+      <path d="M-75.0 0 Q0 -22 75.0 0 L75.0 216.0 Q75.0 276.0 0 300 Q-75.0 276.0 -75.0 216.0 Z"/>
+      <path d="M-66.0 12 Q0 -4 66.0 12 L66.0 210.0 Q66.0 258.0 0 288 Q-66.0 258.0 -66.0 210.0 Z" fill="#000" fill-opacity=".30"/>
+      <path d="M0 4 L0 292" stroke="#fff" stroke-opacity=".28" stroke-width="5"/>
+      <path d="M0 4 L0 292" stroke="#000" stroke-opacity=".3" stroke-width="2" transform="translate(5 0)"/>
+      <circle cx="0" cy="102.00000000000001" r="16.5" fill="#fff" fill-opacity=".25"/>
+      <circle cx="0" cy="102.00000000000001" r="11.25" fill="#000" fill-opacity=".35"/>
+      <path d="M0.0 102.00000000000001 m-75.0 0" />
+      <path d="M-72.0 8 Q0 -10 72.0 8" stroke="#fff" stroke-opacity=".3" stroke-width="3" fill="none"/>
+      <path d="M72.0 8 L72.0 216.0" stroke="#000" stroke-opacity=".35" stroke-width="5" fill="none"/>
+    </g><g transform="translate(440 420)" opacity="1">
+      <path d="M-75.0 0 Q0 -22 75.0 0 L75.0 216.0 Q75.0 276.0 0 300 Q-75.0 276.0 -75.0 216.0 Z"/>
+      <path d="M-66.0 12 Q0 -4 66.0 12 L66.0 210.0 Q66.0 258.0 0 288 Q-66.0 258.0 -66.0 210.0 Z" fill="#000" fill-opacity=".30"/>
+      <path d="M0 4 L0 292" stroke="#fff" stroke-opacity=".28" stroke-width="5"/>
+      <path d="M0 4 L0 292" stroke="#000" stroke-opacity=".3" stroke-width="2" transform="translate(5 0)"/>
+      <circle cx="0" cy="102.00000000000001" r="16.5" fill="#fff" fill-opacity=".25"/>
+      <circle cx="0" cy="102.00000000000001" r="11.25" fill="#000" fill-opacity=".35"/>
+      <path d="M0.0 102.00000000000001 m-75.0 0" />
+      <path d="M-72.0 8 Q0 -10 72.0 8" stroke="#fff" stroke-opacity=".3" stroke-width="3" fill="none"/>
+      <path d="M72.0 8 L72.0 216.0" stroke="#000" stroke-opacity=".35" stroke-width="5" fill="none"/>
+    </g>
+    <g transform="translate(155 350) scale(0.9)" opacity="1">
+      <path d="M-30 0 C-34 -40 -20 -74 0 -76 C20 -74 34 -40 30 0 L22 8 L22 34 C14 42 -14 42 -22 34 L-22 8 Z"/>
+      <path d="M-4 -78 C-2 -100 12 -112 30 -110 C20 -104 14 -92 14 -76 Z"/>
+      <g fill="#000" fill-opacity=".45"><rect x="-22" y="-6" width="44" height="9"/><rect x="-3" y="-6" width="6" height="36"/></g>
+      <g fill="#000" fill-opacity=".3"><path d="M4 -76 C20 -74 34 -40 30 0 L22 8 L22 34 C18 38 10 40 4 40 Z"/></g>
+      <path d="M-34 38 C-70 36 -86 70 -80 104 L80 104 C86 70 70 36 34 38 C20 46 -20 46 -34 38 Z"/>
+      <path d="M-34 38 C-70 36 -86 70 -80 104 L-60 104 C-62 74 -50 50 -34 38 Z" fill="#fff" fill-opacity=".18"/>
+    </g><g transform="translate(345 350) scale(0.9)" opacity="1">
+      <path d="M-30 0 C-34 -40 -20 -74 0 -76 C20 -74 34 -40 30 0 L22 8 L22 34 C14 42 -14 42 -22 34 L-22 8 Z"/>
+      <path d="M-4 -78 C-2 -100 12 -112 30 -110 C20 -104 14 -92 14 -76 Z"/>
+      <g fill="#000" fill-opacity=".45"><rect x="-22" y="-6" width="44" height="9"/><rect x="-3" y="-6" width="6" height="36"/></g>
+      <g fill="#000" fill-opacity=".3"><path d="M4 -76 C20 -74 34 -40 30 0 L22 8 L22 34 C18 38 10 40 4 40 Z"/></g>
+      <path d="M-34 38 C-70 36 -86 70 -80 104 L80 104 C86 70 70 36 34 38 C20 46 -20 46 -34 38 Z"/>
+      <path d="M-34 38 C-70 36 -86 70 -80 104 L-60 104 C-62 74 -50 50 -34 38 Z" fill="#fff" fill-opacity=".18"/>
+    </g>
+    <g transform="translate(155 442)" opacity="1">
+      <path d="M-75.0 0 Q0 -22 75.0 0 L75.0 201.6 Q75.0 257.6 0 280 Q-75.0 257.6 -75.0 201.6 Z"/>
+      <path d="M-66.0 12 Q0 -4 66.0 12 L66.0 196.0 Q66.0 240.79999999999998 0 268 Q-66.0 240.79999999999998 -66.0 196.0 Z" fill="#000" fill-opacity=".30"/>
+      <path d="M0 4 L0 272" stroke="#fff" stroke-opacity=".28" stroke-width="5"/>
+      <path d="M0 4 L0 272" stroke="#000" stroke-opacity=".3" stroke-width="2" transform="translate(5 0)"/>
+      <circle cx="0" cy="95.2" r="16.5" fill="#fff" fill-opacity=".25"/>
+      <circle cx="0" cy="95.2" r="11.25" fill="#000" fill-opacity=".35"/>
+      <path d="M0.0 95.2 m-75.0 0" />
+      <path d="M-72.0 8 Q0 -10 72.0 8" stroke="#fff" stroke-opacity=".3" stroke-width="3" fill="none"/>
+      <path d="M72.0 8 L72.0 201.6" stroke="#000" stroke-opacity=".35" stroke-width="5" fill="none"/>
+    </g><g transform="translate(345 442)" opacity="1">
+      <path d="M-75.0 0 Q0 -22 75.0 0 L75.0 201.6 Q75.0 257.6 0 280 Q-75.0 257.6 -75.0 201.6 Z"/>
+      <path d="M-66.0 12 Q0 -4 66.0 12 L66.0 196.0 Q66.0 240.79999999999998 0 268 Q-66.0 240.79999999999998 -66.0 196.0 Z" fill="#000" fill-opacity=".30"/>
+      <path d="M0 4 L0 272" stroke="#fff" stroke-opacity=".28" stroke-width="5"/>
+      <path d="M0 4 L0 272" stroke="#000" stroke-opacity=".3" stroke-width="2" transform="translate(5 0)"/>
+      <circle cx="0" cy="95.2" r="16.5" fill="#fff" fill-opacity=".25"/>
+      <circle cx="0" cy="95.2" r="11.25" fill="#000" fill-opacity=".35"/>
+      <path d="M0.0 95.2 m-75.0 0" />
+      <path d="M-72.0 8 Q0 -10 72.0 8" stroke="#fff" stroke-opacity=".3" stroke-width="3" fill="none"/>
+      <path d="M72.0 8 L72.0 201.6" stroke="#000" stroke-opacity=".35" stroke-width="5" fill="none"/>
+    </g>
+  </g>
+  <path d="M0 668 C100 656 170 672 260 664 S430 656 500 668 L500 700 L0 700 Z" opacity=".7"/>
+</svg>

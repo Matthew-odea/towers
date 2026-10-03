@@ -1,0 +1,155 @@
+/*
+ * Towers design tokens. Roshar: weathered slate and stone, parchment, engraved metal,
+ * a cool storm-lit field. Stormlight (--storm-*) is reserved for what the player can act on now.
+ */
+:root {
+  /* ---- Type ---------------------------------------------------------------------------- */
+  --font-display: 'Gloock', 'Iowan Old Style', 'Palatino Linotype', Georgia, serif;
+  --font-ui: 'Alegreya Sans', 'Gill Sans', 'Optima', 'Segoe UI', sans-serif;
+
+  --fs-xs: 11px;
+  --fs-sm: 13px;
+  --fs-md: 15px;
+  --fs-lg: 19px;
+  --fs-xl: 26px;
+  --fs-2xl: 38px;
+  --fs-3xl: 56px;
+  --fs-hero: 84px;
+
+  --lh-tight: 1.05;
+  --lh-ui: 1.35;
+  --tracking-caps: 0.14em;
+
+  /* ---- Field and stone ----------------------------------------------------------------- */
+  --storm-night: #07090c;      /* outermost field */
+  --slate-950: #0b0e12;
+  --slate-900: #11151a;
+  --slate-850: #161b21;
+  --slate-800: #1c2229;
+  --slate-700: #262d36;
+  --slate-600: #343c47;
+  --slate-500: #4a535f;
+  --slate-400: #6b7480;
+  --slate-300: #949ca6;
+
+  --parchment: #ddd3bd;
+  --parchment-dim: #b4ab96;
+  --parchment-faint: #807a6c;
+  --ink: #15171b;
+
+  /* engraved metal (frames, rules, numerals) */
+  --metal-hi: #d8c99f;
+  --metal: #a8976c;
+  --metal-lo: #6a5d3e;
+  --metal-shadow: #2a2418;
+  --steel-hi: #c9d0d8;
+  --steel: #8b949e;
+  --steel-lo: #4c545d;
+
+  /* ---- Factions (seat ids stay red / black) -------------------------------------------- */
+  /* Red: Kholin & the Radiants, deep sapphire-steel */
+  --red-900: #0e1a29;
+  --red-800: #152739;
+  --red-700: #1e3a55;
+  --red-600: #2a5076;
+  --red-500: #3a6894;
+  --red-400: #5d89b3;
+  --red-300: #93b3d2;
+  /* Black: Singers & Fused, deep garnet / ember */
+  --black-900: #220b0f;
+  --black-800: #341117;
+  --black-700: #4f1822;
+  --black-600: #6c2230;
+  --black-500: #8e3140;
+  --black-400: #b8533e;
+  --black-300: #df8a5e;
+
+  /* ---- Terrain ------------------------------------------------------------------------- */
+  --plains-a: #49503d;
+  --plains-b: #5d6448;
+  --plains-rock: #7a7a66;
+  --rockbud: #8a9a5a;
+  --forest-a: #1f2c22;
+  --forest-b: #2e4130;
+  --forest-c: #3f5a3c;
+  --mountain-a: #3b3d45;
+  --mountain-b: #5c5e68;
+  --mountain-snow: #a9adb5;
+  --tower-a: #2a2c31;
+  --tower-b: #45464d;
+
+  /* ---- Stormlight (interactivity only) ------------------------------------------------- */
+  --storm-core: #f4fbff;
+  --storm: #bfeeff;
+  --storm-mid: #7fd6f5;
+  --storm-deep: #2c8fb5;
+  --storm-a10: rgba(191, 238, 255, 0.1);
+  --storm-a20: rgba(191, 238, 255, 0.2);
+  --storm-a35: rgba(191, 238, 255, 0.35);
+  --storm-a60: rgba(191, 238, 255, 0.6);
+  --glow-storm: 0 0 0 1px rgba(220, 246, 255, 0.85), 0 0 10px 1px rgba(150, 225, 250, 0.55),
+    0 0 26px 4px rgba(120, 210, 245, 0.25);
+  --glow-storm-soft: 0 0 0 1px rgba(220, 246, 255, 0.5), 0 0 12px rgba(150, 225, 250, 0.35);
+  --glow-storm-svg: drop-shadow(0 0 3px rgba(190, 240, 255, 0.95)) drop-shadow(0 0 10px rgba(120, 210, 245, 0.55));
+  /* hostile target: still Stormlight (actionable), shaped differently on the board */
+  --threat: #f2d3c4;
+
+  /* ---- Feedback (not glow) ------------------------------------------------------------- */
+  --flare: #fff1c9;            /* a card activating on the dice */
+  --ash: #3a3530;              /* destroyed */
+  --danger: #c8644e;
+
+  /* ---- Spacing / radii / lines -------------------------------------------------------- */
+  --sp-1: 4px;
+  --sp-2: 8px;
+  --sp-3: 12px;
+  --sp-4: 16px;
+  --sp-5: 24px;
+  --sp-6: 32px;
+  --sp-7: 48px;
+  --sp-8: 64px;
+
+  --r-xs: 2px;
+  --r-sm: 4px;
+  --r-md: 7px;
+  --r-lg: 12px;
+  --r-pill: 999px;
+
+  --hairline: 1px solid rgba(216, 201, 159, 0.18);
+  --rule: 1px solid rgba(216, 201, 159, 0.32);
+
+  /* ---- Shadows ------------------------------------------------------------------------- */
+  --shadow-1: 0 1px 2px rgba(0, 0, 0, 0.5);
+  --shadow-2: 0 3px 8px rgba(0, 0, 0, 0.45), 0 1px 2px rgba(0, 0, 0, 0.6);
+  --shadow-3: 0 12px 28px rgba(0, 0, 0, 0.55), 0 3px 8px rgba(0, 0, 0, 0.5);
+  --shadow-card: 0 2px 4px rgba(0, 0, 0, 0.55), 0 8px 18px rgba(0, 0, 0, 0.35);
+  --shadow-inset: inset 0 1px 0 rgba(255, 255, 255, 0.06), inset 0 -1px 0 rgba(0, 0, 0, 0.5);
+
+  /* ---- Motion -------------------------------------------------------------------------- */
+  --dur-instant: 90ms;
+  --dur-fast: 150ms;
+  --dur-med: 260ms;
+  --dur-slow: 400ms;
+  --dur-step: 600ms;           /* one readable bot step */
+  --ease-out: cubic-bezier(0.2, 0.8, 0.2, 1);
+  --ease-in-out: cubic-bezier(0.65, 0, 0.35, 1);
+  --ease-settle: cubic-bezier(0.3, 1.35, 0.5, 1);
+
+  /* ---- Layers -------------------------------------------------------------------------- */
+  --z-board: 1;
+  --z-hud: 10;
+  --z-drawer: 30;
+  --z-inspect: 40;
+  --z-banner: 50;
+  --z-shell: 60;
+  --z-modal: 80;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --dur-instant: 0ms;
+    --dur-fast: 0ms;
+    --dur-med: 0ms;
+    --dur-slow: 0ms;
+  }
+}

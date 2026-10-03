@@ -244,7 +244,7 @@ below):
 
 | Source | Side |
 |---|---|
-| A committed Cavalry stands on a Mountain, or (attacker) the target hex is a Mountain | That side |
+| A committed Cavalry stands on a Mountain, or a committed attacking Cavalry attacks a Mountain target hex (only applies when that side committed Cavalry) | That side |
 | Defender committed an Archer and the attacker has ≥1 committed card adjacent to the target | Defender |
 | **Surrounded**: the attacker's committed non-ranged cards occupy ≥3 distinct hexes adjacent to the target | Defender |
 

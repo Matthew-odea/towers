@@ -10,3 +10,4 @@ infra/build/
 test-results/
 playwright-report/
 .env
+art-src/

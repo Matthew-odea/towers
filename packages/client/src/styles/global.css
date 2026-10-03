@@ -1,0 +1,215 @@
+@import url('https://fonts.googleapis.com/css2?family=Alegreya+Sans:ital,wght@0,400;0,500;0,700;1,400&family=Gloock&display=swap');
+@import './tokens.css';
+
+/* ---- Reset ---------------------------------------------------------------------------- */
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+}
+body {
+  min-width: 1280px;
+  min-height: 720px;
+  overflow: hidden;
+  background: var(--storm-night);
+  color: var(--parchment);
+  font-family: var(--font-ui);
+  font-size: var(--fs-md);
+  line-height: var(--lh-ui);
+  -webkit-font-smoothing: antialiased;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+}
+h1,
+h2,
+h3,
+h4,
+p,
+ul,
+ol,
+figure {
+  margin: 0;
+}
+ul,
+ol {
+  padding: 0;
+  list-style: none;
+}
+img,
+svg {
+  display: block;
+}
+button,
+input,
+select,
+textarea {
+  font: inherit;
+  color: inherit;
+}
+button {
+  cursor: pointer;
+  background: none;
+  border: 0;
+  padding: 0;
+}
+button:disabled {
+  cursor: default;
+}
+:focus-visible {
+  outline: 1px solid var(--storm);
+  outline-offset: 2px;
+}
+::selection {
+  background: rgba(191, 238, 255, 0.25);
+}
+
+/* ---- Base typography ------------------------------------------------------------------ */
+h1,
+h2,
+h3,
+.display {
+  font-family: var(--font-display);
+  font-weight: 400;
+  line-height: var(--lh-tight);
+  letter-spacing: 0.005em;
+}
+h1 {
+  font-size: var(--fs-3xl);
+}
+h2 {
+  font-size: var(--fs-2xl);
+}
+h3 {
+  font-size: var(--fs-xl);
+}
+.numeral {
+  font-family: var(--font-display);
+  font-variant-numeric: lining-nums;
+  font-weight: 400;
+}
+.caps {
+  font-size: var(--fs-xs);
+  text-transform: uppercase;
+  letter-spacing: var(--tracking-caps);
+}
+.quiet {
+  color: var(--parchment-dim);
+}
+a {
+  color: var(--parchment);
+  text-decoration-color: rgba(216, 201, 159, 0.4);
+  text-underline-offset: 3px;
+}
+a:hover {
+  text-decoration-color: var(--parchment);
+}
+
+/* ---- Field: the storm-dark backdrop shared by every screen -------------------------- */
+.storm-field {
+  position: relative;
+  min-height: 100%;
+  background:
+    radial-gradient(ellipse 70% 55% at 50% 46%, rgba(70, 92, 112, 0.22), transparent 70%),
+    radial-gradient(ellipse 120% 80% at 50% 120%, rgba(20, 30, 40, 0.8), transparent 60%),
+    linear-gradient(180deg, #0a0d11 0%, #0d1116 50%, #07090c 100%);
+}
+
+/* ---- Shared controls ------------------------------------------------------------------- */
+/* Engraved metal button. `.primary` / `.lit` adds Stormlight: only when the action is available. */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--sp-2);
+  min-height: 34px;
+  padding: 0 var(--sp-4);
+  border-radius: var(--r-sm);
+  background: linear-gradient(180deg, var(--slate-700), var(--slate-800));
+  border: 1px solid rgba(216, 201, 159, 0.28);
+  box-shadow: var(--shadow-inset), var(--shadow-1);
+  color: var(--parchment);
+  font-family: var(--font-ui);
+  font-weight: 500;
+  font-size: var(--fs-md);
+  letter-spacing: 0.02em;
+  transition:
+    box-shadow var(--dur-fast) var(--ease-out),
+    border-color var(--dur-fast),
+    color var(--dur-fast),
+    transform var(--dur-instant);
+}
+.btn:hover:not(:disabled) {
+  border-color: rgba(216, 201, 159, 0.55);
+}
+.btn:active:not(:disabled) {
+  transform: translateY(1px);
+}
+.btn:disabled {
+  color: var(--slate-400);
+  border-color: rgba(216, 201, 159, 0.1);
+}
+.btn.primary:not(:disabled),
+.btn.lit:not(:disabled) {
+  color: var(--storm-core);
+  border-color: rgba(220, 246, 255, 0.7);
+  box-shadow: var(--shadow-inset), var(--glow-storm-soft);
+  text-shadow: 0 0 8px rgba(160, 230, 255, 0.6);
+}
+.btn.primary:hover:not(:disabled),
+.btn.lit:hover:not(:disabled) {
+  box-shadow: var(--shadow-inset), var(--glow-storm);
+}
+.btn.ghost {
+  background: none;
+  border-color: transparent;
+  box-shadow: none;
+  color: var(--parchment-dim);
+}
+.btn.ghost:hover:not(:disabled) {
+  color: var(--parchment);
+  border-color: transparent;
+}
+.btn.danger,
+button.danger {
+  color: #f0c3b6;
+  border-color: rgba(200, 100, 78, 0.6);
+}
+
+.field {
+  height: 40px;
+  padding: 0 var(--sp-3);
+  border-radius: var(--r-sm);
+  background: rgba(7, 9, 12, 0.6);
+  border: 1px solid rgba(216, 201, 159, 0.25);
+  color: var(--parchment);
+  transition: border-color var(--dur-fast);
+}
+.field::placeholder {
+  color: var(--parchment-faint);
+}
+.field:focus {
+  outline: none;
+  border-color: rgba(216, 201, 159, 0.6);
+}
+
+/* Minimal scrollbars that do not shout. */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--slate-600) transparent;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 1ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 1ms !important;
+  }
+}

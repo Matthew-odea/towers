@@ -1,0 +1,376 @@
+# Towers engine (`@towers/engine`)
+
+The rules engine as built. Rules come from `docs/rules/RULINGS.md`; this file describes the code.
+Everything is exported from `packages/engine/src/index.ts`.
+
+- Pure TypeScript, no dependencies, no Node or browser APIs.
+- State is plain JSON. `JSON.parse(JSON.stringify(state))` round-trips.
+- `applyAction` never mutates its input and never throws. Bad input returns `{ ok: false, error }`
+  with a readable message.
+- Deterministic: the same seed and the same action sequence always give the same states and events.
+
+```ts
+import { createMatch, applyAction, viewFor, pendingDecision, chooseBotAction } from '@towers/engine';
+
+let state = createMatch({ seed: crypto.randomUUID(), names: { red: 'Ann', black: 'Bo' } });
+const r = applyAction(state, { type: 'concede', player: 'red' });
+if (r.ok) { state = r.state; broadcast(r.events); } else { reply(r.error); }
+```
+
+---
+
+## 1. Core API
+
+```ts
+createMatch(opts: { seed: string; names?: Partial<Record<PlayerId, string>>; firstPlayer?: PlayerId }): MatchState
+applyAction(state: MatchState, action: Action): { ok: true; state: MatchState; events: GameEvent[] } | { ok: false; error: string }
+validateAction(state: MatchState | PlayerView, action: Action): string | null   // null = legal now
+isLegal(state: MatchState | PlayerView, action: Action): boolean
+viewFor(state: MatchState | PlayerView, player: PlayerId): PlayerView
+pendingDecision(state: MatchState | PlayerView): PendingDecision
+actingPlayers(state): PlayerId[]          // pendingDecision(state).players
+mustAct(state, player): boolean
+chooseBotAction(state: MatchState | PlayerView, player: PlayerId, opts?: { level?: 'random'; rand?: () => number }): Action | null
+ENGINE_VERSION: string
+```
+
+- `createMatch` returns round 1 in the `setup` phase. Terrain is already generated. If
+  `firstPlayer` is omitted, the round-1 first player is drawn from the seed.
+- `seed` should be a cryptographically random string on the server. The engine hashes it
+  (cyrb128) into an sfc32 generator whose 4-word state lives in `state.rng`.
+- `validateAction` runs the same checks as `applyAction` without executing anything. It works
+  on a `PlayerView`, which is how clients and bots test legality.
+- `chooseBotAction` returns a legal action for `player`'s pending decision, or `null` if that
+  player has nothing to decide. Today it dispatches to the random-legal bot
+  (`src/bot/random.ts`). Without `rand` it is deterministic for a given state. It never concedes.
+
+### Actions
+
+Each action carries `player`. All fields are re-validated, so network input can be passed
+straight in.
+
+| `type` | Fields | When |
+|---|---|---|
+| `setupPlace` | `placements: { cardId, hex }[]` | setup; once per player per round |
+| `move` | `cardIds, from, path` | your turn; `path` = `[hex]`, or `[plains, plains]` for an all-Cavalry move |
+| `withdraw` | `cardIds, from, to: HexKey \| 'reserve'` | your turn |
+| `deploy` | `cardIds` (1–3) | your turn |
+| `fortify` | `hex` | your turn |
+| `reinforce` | `cardId, hex` | your turn |
+| `spawnWit` | `hex` | your turn |
+| `engage` | `target, cardIds` (1–3), `witNumber?` (2–12, required iff Wit committed) | your turn |
+| `defend` | `cardIds` (1–3, or 1–4 if Fortified), `witNumber?` | `defend` decision |
+| `reroll` | `source: 'commander' \| 'disadvantage'`, `die: 0 \| 1`, `commanderId?` | `reroll` decision |
+| `passReroll` | | `reroll` decision |
+| `press` / `breakOff` | | `pressOrBreak` decision (attacker) |
+| `chooseCasualties` | `cardIds` (exactly `count`) | `casualties` decision |
+| `retreat` | `to: HexKey \| null` (null = stay) | `retreat` decision (defender) |
+| `endTurn` | | your turn, no engagement in progress |
+| `concede` | | any time, by either player, until the match is over |
+
+A turn action sent while an engagement is in progress is rejected. A `commanderId` left out of
+a Commander reroll uses the first unused committed Commander.
+
+---
+
+## 2. State
+
+`MatchState` = `PublicState` + `{ seed, rng, diceQueue }`.
+`PlayerView` = `PublicState` + `{ viewer }`. A view has no `seed`, `rng` or `diceQueue`, and
+during setup the opponent's `setup[p].placements` is `null`; their `submitted` flag stays visible.
+
+| Field | Meaning |
+|---|---|
+| `schema` | `1` |
+| `seq` | number of actions applied (incremented by every successful `applyAction`) |
+| `names` | display names per seat |
+| `cards` | all 54 cards by id: `{ id, owner, kind, rank?, character? }` |
+| `phase` | `'setup' \| 'play' \| 'matchOver'` |
+| `round` | 1-based |
+| `roundWins` | `{ red, black }` |
+| `roundResults` | `{ round, winner, reason: 'tower' \| 'decapitation' \| 'concede' }[]`, the history of finished rounds |
+| `round1Starter`, `roundStarter` | first player of round 1 / of the current round (alternates) |
+| `winner` | match winner once `phase === 'matchOver'` |
+| `terrain` | `Record<HexKey, 'plains' \| 'forest' \| 'mountain' \| 'tower'>` for this round |
+| `stacks` | `Record<HexKey, cardId[]>`, non-empty hexes only, one owner per hex, insertion order |
+| `reserve` | per player. **During setup every available card, Commanders included, is here** until the placements are revealed |
+| `destroyed` | per player. Commanders leave this pile when the next round starts |
+| `fortified` | `Record<HexKey, PlayerId>`: hexes Fortified for the player holding them |
+| `towerCount` | `{ red, black }` per §11.1 |
+| `setup` | `Record<PlayerId, { submitted, placements }>` |
+| `turn` | `null` outside play, else `TurnState` (below) |
+| `engagement` | `null`, or the live `Engagement` (below) |
+
+`TurnState`: `{ player, number, cp, spent: Record<CpActionType, number>, arrived: cardId[], mountainLocked: cardId[], charge: cardId[] | null }`.
+`arrived` lists cards that moved or arrived this turn (this blocks Fortify). `mountainLocked`
+lists cards of either player that entered a Mountain this turn. `charge` holds the Cavalry from
+a 2-hex move that was the immediately previous action. `CpActionType` =
+`move | engage | deploy | withdraw | fortify | reinforce | spawnWit`.
+
+`Engagement`: `attacker, defender, target, attackerCards, rangedArchers, attackerWit,
+defenderCards, defenderWit, charge, stage ('defend' | 'reroll' | 'pressOrBreak' | 'casualties' | 'retreat'),
+modifiers ({ attacker, defender }: { advantage: AdvantageSource[], disadvantage: DisadvantageSource[] }),
+dice, rolls, staleCount, commanderRerollsUsed, forcedRerollUsed, window ({ toAct, passes }),
+result (latest EngagementResult), casualtySteps, casualtiesChosen, retreatHexes`.
+
+`AdvantageSource` = `fortified | charge | archerHighGround | mountainDefence | flanking | stale`.
+`DisadvantageSource` = `cavalryMountain | archerDefending | surrounded`.
+`MODIFIER_LABELS` maps each source to display text, and `labelModifiers(m)` applies it.
+
+### Round flow
+
+`setup` (both submit) → reveal → `play` (turns) → round won → **straight into the next round's
+`setup`** (new terrain, Commanders restored, surviving cards back in Reserve, the other player
+starts), or `matchOver` at 2 round wins. There is no `roundOver` decision: show the result
+from the `roundWon` event and `roundResults`. `matchOver` is terminal and every action is
+rejected there.
+
+### Board
+
+Axial `"q,r"` keys, radius 2 (19 hexes). Red Tower `-1,2` (home edge `r = 2`), Black Tower
+`1,-2` (home edge `r = -2`). Exports: `ALL_HEXES, TOWER, HOME_EDGE, CENTRE, DIRECTIONS, hexKey,
+parseHex, isHex, other, distance, areAdjacent, neighbors, mirror, commonNeighbors`.
+
+### Cards
+
+Ids follow `<owner>-<kind>-<rank|character>`, e.g. `red-light-7`, `black-archer-venli`,
+`red-wit-hoid`. Exports: `CHARACTERS, KIND_NAMES, RANKS, buildArmy(owner)` (27 cards in
+display order), `buildAllCards(), cardName(card)` ("Light Infantry 7", "Archer (venli)"),
+`cardActivates(card, dice, witNumber), waysToRoll(total)`.
+
+Constants: `PLAYERS, CP_PER_TURN (4), CP_CAP_PER_TYPE (3), CP_ACTION_TYPES, TOWER_WIN_COUNT (3),
+ROUNDS_TO_WIN (2), MAX_SETUP_OTHERS (6)`.
+
+---
+
+## 3. PendingDecision
+
+Every variant has `players`, the players who must act now. Only `setup` can list two.
+
+| `kind` | Fields | Respond with |
+|---|---|---|
+| `setup` | `players` (not yet submitted) | `setupPlace` |
+| `turn` | `player, cp, capRemaining: Record<CpActionType, number>` | any turn action, `endTurn` |
+| `defend` | `player, target, eligible, min: 1, max, witEligible` | `defend` |
+| `reroll` | `player, dice, options: ({ source: 'commander', commanderId } \| { source: 'disadvantage' })[]` | `reroll` / `passReroll` |
+| `pressOrBreak` | `player` (attacker), `staleCount` | `press` / `breakOff` |
+| `casualties` | `player` (chooser), `owner` (whose cards die), `count`, `eligible`, `reason: 'normal' \| 'advantage' \| 'shardstrike' \| 'bloodbath'` | `chooseCasualties` |
+| `retreat` | `player` (defender), `from`, `hexes` (never empty) | `retreat` |
+| `matchOver` | `winner`, `players: []` | nothing |
+
+`concede` is legal for either player in every phase except `matchOver`.
+
+The engine resolves these cases automatically, so nobody is asked a question with one answer:
+- `defend` when the target hex holds exactly one non-Wit card (a lone Wit still needs a number).
+- Reroll turns for a player with no usable option. That player auto-passes (`rerollPassed`,
+  `auto: true`). A `reroll` decision therefore always has at least one option.
+- A casualty step whose `count` equals the number of eligible cards. All of them die.
+- Combat Retreat when no hex is legal. The stack stays (`retreated` with `to: null, auto: true`).
+
+The engine never auto-ends a turn, even at 0 CP. Clients may send `endTurn` themselves.
+
+---
+
+## 4. GameEvent reference
+
+Events can be shown to both players. None of them reveals a hidden setup placement.
+
+| `type` | Fields |
+|---|---|
+| `roundStarted` | `round, firstPlayer, terrain` |
+| `setupSubmitted` | `player` |
+| `setupRevealed` | `placements: Record<PlayerId, { cardId, hex }[]>` |
+| `turnStarted` | `player, turn, cp` |
+| `turnEnded` | `player` |
+| `towerCount` | `player, count, hex`. Fires when the count goes up at turn start and when it resets to 0 |
+| `moved` | `player, cardIds, from, path, to, charge` (`charge` = it was a 2-hex Cavalry move) |
+| `withdrew` | `player, cardIds, from, to` (`'reserve'` possible) |
+| `deployed` | `player, cardIds, hex` |
+| `spawned` | `player, cardId, hex` |
+| `fortified` | `player, hex, cost` |
+| `fortifyEnded` | `player, hex` (the hex no longer holds that player's cards) |
+| `reinforced` | `player, cardId, hex` |
+| `engageDeclared` | `attacker, defender, target, cardIds, rangedArchers, witNumber, charge` |
+| `engagementStarted` | `attacker, defender, target, attackerCards, defenderCards, rangedArchers, witNumbers: {attacker, defender}, charge, modifiers, autoDefended` |
+| `diceRolled` | `dice, roll` (1 for the first roll, +1 per Press) |
+| `rerolled` | `player, source, commanderId \| null, die, from, to, dice` |
+| `rerollPassed` | `player, auto` |
+| `resolved` | `dice, activating: {attacker, defender}, advantageBonus, counts, outcome ('attacker' \| 'defender' \| 'bloodbath' \| 'stale'), winner, overwhelming, shardstrike: {attacker, defender}, staleCount` |
+| `advantageGained` | `player, side: 'defender', source: 'stale'` (third stale roll) |
+| `pressed` / `brokeOff` | `player` |
+| `casualties` | `owner, cardIds, chosenBy, auto`. One event per pick step, emitted when the cards are destroyed |
+| `retreated` | `player, cardIds, from, to \| null, auto` |
+| `engagementEnded` | `target, outcome` (`'brokeOff'` possible) |
+| `conceded` | `player` |
+| `roundWon` | `round, winner, reason` |
+| `matchWon` | `winner, roundWins` |
+
+Typical engagement sequence: `engageDeclared` → (`engagementStarted` once the defender commits)
+→ `diceRolled` → `rerollPassed`/`rerolled`… → `resolved` → [`advantageGained`] → (stale:
+`pressed` → `diceRolled`… or `brokeOff`) → `casualties`… → [`fortifyEnded`, `towerCount`] →
+[`retreated`] → `engagementEnded` → [`roundWon` → `roundStarted` | `matchWon`].
+
+---
+
+## 5. Query helpers
+
+All of these accept `MatchState | PlayerView` and never mutate. The ones marked "legal now"
+check through `validateAction`, so they account for whose turn it is, CP, the 3-CP caps, the
+Mountain lock and engagement state.
+
+| Function | Returns |
+|---|---|
+| `moveOptions(s, player, cardIds, from)` | `{ to, path, charge }[]`, legal now, including Cavalry 2-hex paths |
+| `moveDestinations(s, player, cardIds, from)` | distinct destination hexes, legal now |
+| `withdrawOptions(s, player, cardIds, from)` | `(HexKey \| 'reserve')[]`, legal now |
+| `engageableTargets(s, player)` | enemy hexes you can Engage now |
+| `eligibleAttackers(s, player, target)` | `{ cardId, hex, ranged }[]`. Position only: adjacent cards, plus Archers at distance 2 with LOS |
+| `eligibleDefenders(s, target)` | `{ cardIds, max }` |
+| `previewModifiers(s, { player, target, attackerCardIds, defenderCardIds? })` | `EngagementModifiers` for a proposed commitment. Includes charge (from `turn.charge`) and stale Advantage for the live engagement |
+| `labelModifiers(m)` | the same, with `{ source, label }` entries |
+| `activationProbability(s, cardIds, { witNumber?, advantage? })` | exact P(side activates) over the 36 rolls, ignoring rerolls |
+| `engagementOdds(s, { player, target, attackerCardIds, defenderCardIds, attackerWit?, defenderWit?, modifiers? })` | `{ attackerActivates, defenderActivates, attackerWins, defenderWins, bloodbath, stale }` for one roll |
+| `currentEngagementOdds(s)` | the same for the live engagement (after defenders commit), else `null` |
+| `spawnHexes(s, player)` | hexes where Wit could be placed (geometry and occupancy only) |
+| `legalSpawnHexes(s, player)` | Spawn Wit hexes legal now (empty if Wit is not in Reserve) |
+| `fortifyInfo(s, player, hex)` | `{ legal, cost, reason }` |
+| `fortifiableHexes(s, player)` | hexes you can Fortify now |
+| `fortifyCost(s, hex)` | 1 if the stack holds Heavy Infantry, else 2 |
+| `hasSupply(s, player, hex)`, `suppliedHexes(s, player)` | supply line per §10.2 |
+| `reinforceTargets(s, player)` | your Fortified hexes with supply (position only; does not check CP) |
+| `reserveDeployable(s, player)` | Reserve cards that can be Deployed or Reinforced (not Wit, not Commanders) |
+| `deployInfo(s, player)` | `{ legal, reason, hex, cards, max }` |
+| `retreatHexes(s)` | legal Combat Retreat hexes for the live engagement |
+| `rerollOptions(s, player)` | usable reroll options in the open window |
+| `casualtyPool(s, engagement, side, result)` | eligible casualties for a side (§12.1, ranged Archer immunity) |
+| `lineOfSight(s, from, target)`, `attackMode(s, cardId, target)` | `'adjacent' \| 'ranged' \| null` |
+| `computeModifiers(s, input)`, `sideActivation(...)`, `resolveDice(...)`, `ALL_ROLLS` | the combat math the engine itself uses |
+| `locate(s, id)`, `hexOf`, `cardHex`, `stackAt`, `stackOwner`, `hexesOf`, `isFortified`, `commandersOf`, `enterable`, `defenderMax` | lookups |
+
+---
+
+## 6. Testing helpers (`testing`)
+
+```ts
+import { testing, pendingDecision } from '@towers/engine';
+const { buildState, card, cards, forceDice, mustApply, mustReject, applyAll, eventsOf } = testing;
+```
+
+- `card(ref)` resolves a short reference to a card id. Accepted forms:
+  - a full id: `'red-light-7'`
+  - `'<player>:<code>'` where the code is `L7` / `light7`, `H4` / `heavy4`, `A1` `A2` /
+    `archer1`, `V1` `V2` / `cavalry1` (Cavalry), `K1` `K2` / `commander1`, `S1` `S2` / `shard1`,
+    `W` / `wit`, or a character name (`'black:venli'`)
+
+  `cards(...refs)` maps a list.
+- `buildState(spec)` builds a **play-phase** `MatchState`. Every field is optional:
+  - `board: Record<HexKey, ref[]>`: one player per hex
+  - `terrain`: overrides. The default is Towers on their hexes and **Plains everywhere else**
+  - `destroyed: ref[]`; `unlisted: 'reserve' | 'destroyed'` (default `'reserve'`). Commanders
+    left off the board go to Reserve, where they are inert, so Decapitation is never triggered
+    by accident
+  - `current` (default `'red'`), `cp` (default 4), `spent`, `turnNumber`
+  - `fortified: HexKey[]` (the owner is whoever holds the hex), `moved`, `mountainLocked`, `charge` (refs)
+  - `round`, `roundWins`, `towerCount`, `round1Starter`
+  - `dice: number[]`: the forced dice queue
+  - `seed`
+
+  It throws on an inconsistent spec, such as a hex that mixes owners or a card listed twice.
+- `forceDice(state, ...values)` returns a copy with values appended to the forced-dice queue.
+  The engine consumes the queue before the RNG. Each roll takes 2 values and each reroll takes 1.
+- `mustApply(state, action)` returns `{ state, events }`, or throws with the engine's error.
+  `applyAll(state, actions)` does the same for a list. `mustReject(state, action)` returns the
+  error message, or throws if the action was accepted.
+- `eventsOf(events, type)` filters events by type, with typing.
+
+Example (worked example 4):
+
+```ts
+const s = buildState({
+  board: { '0,1': ['red:K1', 'red:L8'], '0,0': ['black:L2', 'black:L3'] },
+  dice: [2, 5, 3],              // initial roll 2+5, then the reroll gives 3
+});
+let r = applyAll(s, [
+  { type: 'engage', player: 'red', target: '0,0', cardIds: cards('red:K1', 'red:L8') },
+  { type: 'defend', player: 'black', cardIds: [card('black:L2')] },
+]);
+// Black had no reroll and auto-passed; Red is asked.
+pendingDecision(r.state);       // { kind: 'reroll', player: 'red', dice: [2, 5], options: [{ source: 'commander', ... }] }
+r = mustApply(r.state, { type: 'reroll', player: 'red', source: 'commander', die: 0 });
+eventsOf(r.events, 'resolved')[0].outcome;   // 'attacker' (3 + 5 = 8)
+```
+
+Remember that a committed Commander opens a reroll window for its owner. A test has to answer
+it with `passReroll`/`reroll` before the engagement resolves.
+
+### Simulation
+
+`npm run sim -w @towers/engine -- --games 50 [--seed s] [--max-turns 400] [--verbose]` plays
+random-bot matches through `viewFor` and checks invariants after every action: card
+conservation, no shared hexes, CP within bounds, caps respected, Fortified hexes held by their
+owner, someone always able to act, the bot always able to answer. `simulate(seed)` and
+`checkInvariants(state)` are exported from `scripts/sim.ts`.
+
+---
+
+## 7. Interpretation notes
+
+These are points RULINGS leaves implicit. Each is implemented as written here and covered by tests.
+
+1. **Cavalry and Mountain Disadvantage.** The attacker is Disadvantaged if it commits Cavalry
+   and either a committed Cavalry stands on a Mountain or the target is a Mountain. The defender
+   is Disadvantaged if it commits Cavalry and the target is a Mountain. Attacking into a
+   Mountain without Cavalry gives no Disadvantage. The defender still gets `mountainDefence`
+   Advantage.
+2. **Archer high ground** counts any committed attacking Archer, adjacent or ranged, standing on
+   a Mountain while the target is not a Mountain.
+3. **Advantage and Disadvantage do not stack.** Several sources still mean one extra activation
+   on 11/12. Every source is listed for display.
+4. **Stale Advantage** is added at exactly the third stale roll, and only if the defender has no
+   Advantage at that moment. It then shows as source `stale`.
+5. **Modifiers are computed when the defender commits.** Cards cannot move during an
+   engagement, so they stay fixed except for the stale rule. **Charge** is decided at the
+   Engage: one of the Cavalry from the immediately previous 2-hex Move must be committed.
+   Every other successful action by the turn player clears `turn.charge`: Move (a new 2-hex
+   move sets a new charge), Withdraw, Deploy, Fortify, Reinforce, Spawn Wit and End turn.
+6. **"Currently activates"** for the Disadvantage reroll means the Disadvantaged side's
+   activation count is at least 1 on the current dice, including its own Advantage 11/12
+   bonus. It is re-evaluated after every reroll, so an option can appear or disappear
+   mid-window.
+7. **Reroll window.** A player holding any usable option is asked, even if the reroll looks
+   pointless. Only players with no options auto-pass. A reroll resets the consecutive-pass
+   count.
+8. **Fortify "moved or arrived this turn"** is tracked per card for the whole turn. A card that
+   moved out and back still blocks. Deploy, Spawn, Reinforce and Withdraw also mark cards.
+9. **Mountain lock** also covers Reinforce into a Mountain hex. A Combat Retreat is impossible
+   if any card in the defending stack is locked, because the stack cannot split. Withdrawing
+   into a Mountain is allowed and locks the cards.
+10. **Cavalry 2-hex move**: the origin terrain does not matter, both path hexes must be Plains,
+    and the second hex may not be the origin.
+11. **Casualty order and timing.** The pick steps run in order and every card is destroyed only
+    after the last pick, so Decapitation is checked once on the final result. In a win with
+    Shardstrike (and no Advantage-vs-Disadvantage), the winner picks 1 first and the loser then
+    picks the rest from what remains. In a Bloodbath the defender's casualty is decided first,
+    then the attacker's.
+12. **Decapitation** means both of a player's Commanders are in their `destroyed` pile this
+    round. The round ends before any Combat Retreat. If both players lose their last Commander
+    together, the attacker wins.
+13. **Concede** is allowed for either player in `setup` and `play`, including mid-engagement
+    (the engagement is discarded). A setup placement already submitted for that round is
+    discarded.
+14. **Setup.** All available cards, Commanders included, wait in `reserve` until both
+    placements are revealed, so Reserve contents never leak a placement. During play,
+    Commanders are never in Reserve. Deploy and Reinforce also reject Commanders explicitly,
+    which matters only for hand-built test states.
+15. **Ranged versus adjacent**: an Archer adjacent to the target is always an adjacent
+    attacker. It counts for Flanking, Surrounded and `archerDefending`, and it can be a
+    casualty.
+16. **`witNumber`** sent without a committed Wit is rejected rather than ignored.
+17. **Terrain** for each round comes from the match RNG when the round starts, so it depends on
+    the seed and on how much randomness earlier rounds consumed. Round 1 terrain is fixed by
+    the seed.
+18. **Tower count** fires a `towerCount` event when it goes up at turn start, and fires one
+    with `count: 0` when it resets, either immediately after the board changes or at a turn
+    start.
+19. **Turns never auto-end**, even at 0 CP. Concede is always a second legal option, so the
+    "exactly one legal outcome" rule does not apply.
