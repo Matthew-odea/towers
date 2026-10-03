@@ -235,7 +235,7 @@ Disadvantage the winner picks casualties):
 | Target hex is Fortified | Defender |
 | Cavalry charge (§6.2) | Attacker |
 | A committed attacking Archer stands on a Mountain and the target hex is not a Mountain | Attacker |
-| Target hex is a Mountain and **none** of the attacker's committed cards stand on a Mountain *(ruling)* | Defender |
+| Target hex is a Mountain — **always**, even if attacking cards also stand on Mountains (owner clarification; overrides the v1.3 "from non-Mountain hexes" wording) | Defender |
 | **Flanking**: the attacker's committed non-ranged cards occupy ≥2 hexes adjacent to the target, at least two of which are not adjacent to each other | Attacker |
 | 3 stale rolls in this engagement | Defender |
 
