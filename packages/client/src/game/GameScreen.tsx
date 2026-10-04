@@ -27,7 +27,7 @@ import {
 } from '@towers/engine';
 import type { GameConnection, Presence } from '../net/types';
 import { Board, type HexMark } from './Board';
-import type { CardMark } from './Card';
+import { CardView, type CardMark } from './Card';
 import { Clash, ClashDice, OddsTip, type ClashPrompt } from './Clash';
 import { FACTION } from './cardInfo';
 import { BackRow, BannerView, Inspector, LogDrawer, PILE_W, Pile, ReserveFan, RoundPips, Spheres, type Inspect } from './Hud';
@@ -35,6 +35,7 @@ import { ROUND_BANNER_MS } from './display';
 import { capHint } from './hints';
 import { statusFor, type TurnStep } from './status';
 import { TerrainLayer } from './Terrain';
+import { useCardDrag, type DragHandlers } from './useCardDrag';
 import { useFeed } from './useFeed';
 import './game.css';
 
@@ -120,6 +121,13 @@ function Screen({ conn, onRematch }: { conn: GameConnection; onRematch?: () => v
   const [error, setError] = useState<string | null>(null);
   const [awaiting, setAwaiting] = useState<number | null>(null);
   const pendingSelect = useRef<{ hex: HexKey; cardIds: string[] } | null>(null);
+  // Set each render (below) so a drag always acts on the latest state.
+  const dragApi = useRef<DragHandlers | null>(null);
+  const { drag, onPointerDown: onHandPointerDown, ghostRef, ghostStyle } = useCardDrag({
+    canDrag: (id) => dragApi.current?.canDrag(id) ?? false,
+    onStart: (id) => dragApi.current?.onStart(id),
+    onDrop: (id, h) => dragApi.current?.onDrop(id, h),
+  });
 
   useEffect(() => {
     setPresence(conn.getPresence());
@@ -355,6 +363,51 @@ function Screen({ conn, onRematch }: { conn: GameConnection; onRematch?: () => v
   }
   const oppDeciding = !feed.busy && !!e && pd.players.length > 0 && !(pd.players as PlayerId[]).includes(seat);
 
+  // ---- dragging a hand card onto the board (the alternative to pick-then-click) ----
+  const dragKind = (id: string): 'setup' | 'deploy' | 'spawn' | null => {
+    if (setupPhase) return mySetup?.eligible.includes(id) ? 'setup' : null;
+    if (!turnPd || !q || e) return null;
+    if (live.cards[id].kind === 'wit') return q.spawn.length ? 'spawn' : null;
+    return q.deploy.legal && q.deploy.cards.includes(id) ? 'deploy' : null;
+  };
+  const dropTargets = (id: string): HexKey[] => {
+    const k = dragKind(id);
+    if (k === 'setup') return mySetup?.hexes ?? [];
+    if (k === 'deploy') return [TOWER[seat]];
+    if (k === 'spawn') return q?.spawn ?? [];
+    return [];
+  };
+  dragApi.current = {
+    canDrag: (id) => dragKind(id) !== null,
+    onStart: (id) => {
+      setHoverCard(null);
+      const k = dragKind(id);
+      if (k === 'setup') setSetupPick(id);
+      else if (k === 'deploy') {
+        setMode({ kind: 'deploy' });
+        setPicks([id]);
+      } else if (k === 'spawn') setMode({ kind: 'spawn' });
+      if (k === 'deploy' || k === 'spawn') setCostPreview(1);
+    },
+    onDrop: (id, h) => {
+      const k = dragKind(id);
+      if (k && h && dropTargets(id).includes(h)) {
+        if (k === 'setup') send({ type: 'setupPlace', player: seat, placements: [{ cardId: id, hex: h }] });
+        else if (k === 'deploy') send({ type: 'deploy', player: seat, cardIds: [id] });
+        else send({ type: 'spawnWit', player: seat, hex: h });
+        return;
+      }
+      // Released anywhere else: the card goes back to the hand.
+      setSetupPick(null);
+      setCostPreview(0);
+      if (k === 'deploy' || k === 'spawn') {
+        setMode(IDLE);
+        setPicks([]);
+      }
+    },
+  };
+  const dropOn = drag?.over && dropTargets(drag.id).includes(drag.over) ? drag.over : null;
+
   // ---- marks ----
   const hexMarks: Partial<Record<HexKey, HexMark>> = {};
   const hexBadges: Partial<Record<HexKey, ReactNode>> = {};
@@ -427,6 +480,7 @@ function Screen({ conn, onRematch }: { conn: GameConnection; onRematch?: () => v
   if (canAct && (pd.kind === 'defend' || pd.kind === 'casualties')) {
     for (const id of pd.eligible) addMark(id, picks.includes(id) ? 'selected' : 'selectable');
   }
+  if (dropOn) hexMarks[dropOn] = 'drop';
 
   // ---- click handling ----
   const onHexClick = (h: HexKey, ev: MouseEvent) => {
@@ -622,7 +676,8 @@ function Screen({ conn, onRematch }: { conn: GameConnection; onRematch?: () => v
 
   // ---- inspector ----
   let inspect: Inspect = null;
-  if (hoverCard) inspect = { kind: 'card', id: hoverCard };
+  if (drag) inspect = null;
+  else if (hoverCard) inspect = { kind: 'card', id: hoverCard };
   else if (hoverGroup) inspect = hoverGroup;
   else if (hoverHex && boardView.stacks[hoverHex]?.length) inspect = { kind: 'cards', ids: boardView.stacks[hoverHex] };
 
@@ -852,7 +907,7 @@ function Screen({ conn, onRematch }: { conn: GameConnection; onRematch?: () => v
 
   return (
     <div
-      className={`game storm-field ${showClash ? 'game--clash' : ''}`}
+      className={`game storm-field ${showClash ? 'game--clash' : ''} ${drag ? 'game--dragging' : ''}`}
       tabIndex={-1}
       onKeyDown={onKeyDown}
       data-seat={seat}
@@ -959,6 +1014,8 @@ function Screen({ conn, onRematch }: { conn: GameConnection; onRematch?: () => v
           ids={reserveIds}
           marksFor={reserveMarks}
           onCardClick={onReserveClick}
+          onCardPointerDown={onHandPointerDown}
+          dragging={drag?.id ?? null}
           onHover={setHoverCard}
           idle={actor !== seat}
           drop={reserveDrop}
@@ -1025,6 +1082,11 @@ function Screen({ conn, onRematch }: { conn: GameConnection; onRematch?: () => v
       </footer>
 
       <LogDrawer open={logOpen} entries={feed.log} onToggle={() => setLogOpen((o) => !o)} />
+      {drag && (
+        <div className={`drag-ghost ${dropOn ? 'drag-ghost--over' : ''}`} ref={ghostRef} style={ghostStyle} aria-hidden>
+          <CardView card={live.cards[drag.id]} width={76} />
+        </div>
+      )}
     </div>
   );
 }

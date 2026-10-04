@@ -17,12 +17,13 @@ export type HexMark =
   | 'reinforce'
   | 'retreat'
   | 'setup'
+  | 'drop'
   | 'hint'
   | 'source'
   | 'selected'
   | 'own';
 
-const GLOW_MARKS = new Set<HexMark>(['move', 'withdraw', 'deploy', 'spawn', 'fortify', 'reinforce', 'retreat', 'setup']);
+const GLOW_MARKS = new Set<HexMark>(['move', 'withdraw', 'deploy', 'spawn', 'fortify', 'reinforce', 'retreat', 'setup', 'drop']);
 
 export interface BoardProps {
   view: PlayerView;
@@ -290,6 +291,7 @@ export function Board(props: BoardProps) {
               <div
                 key={p.id}
                 className={`board-card ${expanded === p.hex ? 'board-card--fan' : ''}`}
+                data-on-hex={p.hex}
                 style={{
                   transform: `translate(${p.x - p.w / 2}px, ${p.y - (p.w * 1.4) / 2}px) rotate(${p.rot}deg)`,
                   zIndex: p.z,

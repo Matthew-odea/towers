@@ -1,4 +1,4 @@
-import { useLayoutEffect, useRef, useState, type ReactNode } from 'react';
+import { useLayoutEffect, useRef, useState, type PointerEvent, type ReactNode } from 'react';
 import type { Card, PlayerId, PlayerView } from '@towers/engine';
 import { CardView, type CardMark } from './Card';
 import { FACTION, activationText, longName, sortCards } from './cardInfo';
@@ -37,6 +37,10 @@ export interface FanProps {
   ids: string[];
   marksFor: (id: string) => CardMark[];
   onCardClick?: (id: string) => void;
+  /** A press on a card, which may become a drag onto the board. */
+  onCardPointerDown?: (id: string, e: PointerEvent) => void;
+  /** The card being dragged out of the hand: its slot stays, faded. */
+  dragging?: string | null;
   onHover: (id: string | null) => void;
   /** Not my move: the hand sits back, visibly inactive. */
   idle?: boolean;
@@ -47,7 +51,7 @@ export interface FanProps {
   trailingW?: number;
 }
 
-export function ReserveFan({ view, ids, marksFor, onCardClick, onHover, idle, drop, onDrop, trailing, trailingW = 0 }: FanProps) {
+export function ReserveFan({ view, ids, marksFor, onCardClick, onCardPointerDown, dragging, onHover, idle, drop, onDrop, trailing, trailingW = 0 }: FanProps) {
   const ref = useRef<HTMLDivElement>(null);
   const [box, setBox] = useState({ w: 800, h: 140 });
   useLayoutEffect(() => {
@@ -60,11 +64,13 @@ export function ReserveFan({ view, ids, marksFor, onCardClick, onHover, idle, dr
   const sorted = sortCards(view, ids);
   const w = Math.max(56, Math.min(88, (box.h - 26) / 1.4));
   const tw = trailing ? trailingW + 16 : 0;
+  const marks = sorted.map((id) => marksFor(id));
   const lay = fanLayout(
     sorted.map((id) => view.cards[id].kind),
     box.w,
     w,
     tw,
+    marks.map((m) => m.includes('selectable') || m.includes('selected')),
   );
   const x0 = Math.max(0, (box.w - lay.total - tw) / 2);
   return (
@@ -80,17 +86,18 @@ export function ReserveFan({ view, ids, marksFor, onCardClick, onHover, idle, dr
     >
       {drop && <div className="reserve-drop" />}
       {sorted.map((id, i) => {
-        const marks = marksFor(id);
+        const m = marks[i];
         return (
           <div
             key={id}
-            className={`fan-card ${marks.includes('selected') ? 'fan-card--up' : marks.includes('selectable') ? 'fan-card--able' : ''}`}
+            className={`fan-card ${m.includes('selected') ? 'fan-card--up' : m.includes('selectable') ? 'fan-card--able' : ''} ${dragging === id ? 'fan-card--lifted' : ''}`}
             style={{ transform: `translateX(${x0 + lay.x[i]}px)`, zIndex: i }}
+            onPointerDown={onCardPointerDown && !drop ? (e) => onCardPointerDown(id, e) : undefined}
           >
             <CardView
               card={view.cards[id]}
               width={w}
-              marks={marks}
+              marks={m}
               onClick={
                 onCardClick && !drop
                   ? (e) => {

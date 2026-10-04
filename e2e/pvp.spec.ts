@@ -1,4 +1,4 @@
-import { expect, test, type Page } from '@playwright/test';
+import { expect, test } from '@playwright/test';
 import {
   afterVersion,
   answerDecision,
@@ -7,7 +7,8 @@ import {
   game,
   hex,
   myMove,
-  reserveCard,
+  placeSetupCard,
+  playSetupPlans,
   shot,
   tap,
   version,
@@ -19,17 +20,6 @@ import {
 // dice are forced (see playwright.config.ts). With that seed Red's route -2,2 -> -2,1 -> -2,0 ->
 // -1,-1 is Plains/Plains/Forest. Attacking 0,-2 from -1,-1 leaves Black's Tower (1,-2) as a legal
 // Combat Retreat hex, so every kind of engagement decision comes up.
-
-async function place(page: Page, ids: string[], at: string): Promise<void> {
-  for (const id of ids) {
-    const onBoard = boardCard(page, id);
-    if ((await onBoard.count()) > 0) await tap(onBoard); // a Commander already on the Tower
-    else await tap(reserveCard(page, id));
-  }
-  await expect(hex(page, at)).toHaveAttribute('data-mark', 'setup');
-  await tap(hex(page, at));
-  for (const id of ids) await expect(boardCard(page, id)).toHaveCount(1);
-}
 
 test('two players: lobby, setup, a full engagement, chat, reload keeps the seat', async ({ browser }) => {
   const ctxA = await browser.newContext();
@@ -57,16 +47,30 @@ test('two players: lobby, setup, a full engagement, chat, reload keeps the seat'
   await expect(a.locator('.rail--top .who-name')).toHaveText('Bo');
   await expect(b.locator('.rail--top .who-name')).toHaveText('Ann');
 
-  // ---- setup: Red puts Dalinar + Light 7 + Heavy 8 on -2,2; Black puts Light 6 + Heavy 5 on 0,-2 ----
+  // ---- setup: open and turn-based, one card per turn: Red's Commanders, Black's Commanders, then
+  // alternating troops. Red stacks Dalinar + Light 7 + Heavy 8 on -2,2 (the rest elsewhere); Black
+  // stacks Light 6 + Heavy 5 on 0,-2 (Commanders and the rest elsewhere). ----
   await myMove(a, 'setup');
-  await place(a, ['red-commander-dalinar', 'red-light-7', 'red-heavy-8'], '-2,2');
-  await myMove(b, 'setup');
-  await place(b, ['black-light-6', 'black-heavy-5'], '0,-2');
+  await expect(a.locator('.status-line .status-text')).toHaveText(/^Place/);
+  await expect(b.locator('.status-line .status-text')).not.toHaveText(/^Place/);
+  await expect(game(b)).toHaveAttribute('data-acting', 'opponent');
+  await placeSetupCard(a, ['red-commander-dalinar'], '-2,2');
+  // No confirm step: Black's page sees the card face up on the board at once.
+  await expect(boardCard(b, 'red-commander-dalinar')).toHaveCount(1);
+  await expect(hex(a, '-2,2')).not.toHaveAttribute('data-mark', 'setup');
+  await playSetupPlans(a, b, {
+    a: {
+      cards: { 'red-commander-dalinar': '-2,2', 'red-commander-jasnah': '-1,2', 'red-light-7': '-2,2', 'red-heavy-8': '-2,2' },
+      rest: '0,2',
+    },
+    b: {
+      cards: { 'black-commander-raboniel': '1,-2', 'black-commander-eshonai': '1,-2', 'black-light-6': '0,-2', 'black-heavy-5': '0,-2' },
+      rest: '2,-2',
+    },
+  });
+  await expect(game(a)).toHaveAttribute('data-phase', 'play');
   await shot(a, 'pvp-02-setup-red');
-  await a.getByRole('button', { name: 'Ready' }).click();
-  await expect(b.locator('.rail--top .who-ready')).toBeVisible();
   await shot(b, 'pvp-03-setup-black');
-  await b.getByRole('button', { name: 'Ready' }).click();
 
   // ---- Red's turn: move the stack -2,2 -> -2,1 -> -2,0 -> -1,-1 ----
   await myMove(a, 'turn');
@@ -86,7 +90,7 @@ test('two players: lobby, setup, a full engagement, chat, reload keeps the seat'
   // ---- Engage 0,-2 with all three cards (the last CP) ----
   await expect(hex(a, '0,-2')).toHaveAttribute('data-mark', 'attack');
   await tap(hex(a, '0,-2'));
-  const engageBtn = a.getByRole('button', { name: /^Engage/ });
+  const engageBtn = a.locator('.primary-act[data-primary="engage"]');
   await expect(engageBtn).toBeEnabled();
   await expect(engageBtn).toContainText('3/3');
   await shot(a, 'pvp-05-commit');
@@ -111,7 +115,7 @@ test('two players: lobby, setup, a full engagement, chat, reload keeps the seat'
   let left = 0;
   for (const id of survivors) left += await boardCard(b, id).count();
   expect(left).toBe(1);
-  await expect(b.locator('.board-cards [data-card^="black-"]')).toHaveCount(3); // two Commanders + the survivor
+  await expect(b.locator('.board-cards [data-card^="black-"]')).toHaveCount(7); // eight placed, one casualty
   await expect(hex(b, '0,-2')).not.toHaveClass(/hit--stack/);
 
   // The Engage used Red's last CP, so the turn ended by itself.
@@ -146,7 +150,7 @@ test('two players: lobby, setup, a full engagement, chat, reload keeps the seat'
 
   // Black can still play: end the turn and Red is up again.
   const vb = await version(b);
-  await b.getByRole('button', { name: 'End turn' }).click();
+  await b.locator('.primary-act[data-primary="endTurn"]').click();
   await afterVersion(b, vb);
   await myMove(a, 'turn');
 
@@ -196,7 +200,7 @@ test('rematch: both players land in the same new game with a fresh screen', asyn
   await b.getByRole('button', { name: 'Rematch' }).click();
   await expect(b).toHaveURL(a.url());
   await myMove(a, 'setup');
-  await myMove(b, 'setup');
+  await expect(game(b)).toHaveAttribute('data-decision', 'setup');
   await expect(game(a)).toHaveAttribute('data-version', '0');
   await expect(a.locator('.banner')).toHaveCount(0);
   await expect(b.locator('.rail--top .who-name')).toHaveText(ann);

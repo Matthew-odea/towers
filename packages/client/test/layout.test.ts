@@ -44,6 +44,23 @@ describe('fanLayout', () => {
     expect(lay.x[2] - lay.x[1]).toBeGreaterThanOrEqual(80);
   });
 
+  it('shows the few cards you can pick whole, and ignores the flags when nearly all are open', () => {
+    const hand: CardKind[] = ['commander', 'commander', ...HAND];
+    const box = 1000;
+    const w = 88;
+    const plain = fanLayout(hand, box, w, 68);
+    const lay = fanLayout(hand, box, w, 68, hand.map((k) => k === 'commander'));
+    expect(lay.total).toBeLessThanOrEqual(box - 68);
+    const pitch = (l: typeof lay, i: number) => l.x[i + 1] - l.x[i];
+    expect(pitch(plain, 0)).toBeLessThan(w);
+    expect(pitch(lay, 0)).toBeGreaterThanOrEqual(w);
+    expect(pitch(lay, 1)).toBeGreaterThanOrEqual(w);
+    // every other card keeps (nearly) its strip
+    expect(pitch(lay, 10)).toBeGreaterThanOrEqual(w * 0.3 * 0.9);
+    // all but the Wit open: no room to honour that, so the plain layout
+    expect(fanLayout(hand, box, w, 68, hand.map((k) => k !== 'wit'))).toEqual(plain);
+  });
+
   it('squeezes everything when even strips do not fit', () => {
     const lay = fanLayout(HAND, 400, 88);
     expect(lay.total).toBeLessThanOrEqual(400);

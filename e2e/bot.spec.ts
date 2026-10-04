@@ -1,22 +1,26 @@
 import { expect, test } from '@playwright/test';
-import { game, myMove, playTurnsVsBot, shot, simpleTurn, watchErrors } from './helpers';
+import { completeSetup, game, myMove, playTurnsVsBot, shot, simpleTurn, watchErrors } from './helpers';
 
 test('online game against the bot: setup and three full turns', async ({ page }) => {
   const errors = watchErrors(page, 'bot');
   await page.goto('/');
   await page.getByLabel('Your name').fill('Hal');
   await page.getByRole('button', { name: 'Play the bot' }).click();
+  await page.getByRole('group', { name: 'Bot difficulty' }).getByRole('button', { name: 'Medium' }).click();
   await expect(page).toHaveURL(/#\/g\/[a-z0-9]+$/);
   await expect(game(page)).toHaveAttribute('data-seat', 'red');
   await expect(page.locator('.rail--top .who-name')).toHaveText('Bot');
+  await expect(page.locator('.rail--top .who-level')).toHaveText(/Medium/i);
+  expect(await page.evaluate(() => localStorage.getItem('towers.botLevel'))).toBe('medium');
   // No invite for a bot game.
   await expect(page.getByLabel('Game link')).toHaveCount(0);
 
-  // The bot has already placed (its "Ready" shows); Commanders start on my Tower.
+  // Setup is turn-based: Red (me) places first, one card per turn, and the bot answers on its own turns.
   await myMove(page, 'setup');
-  await expect(page.locator('.rail--top .who-ready')).toBeVisible();
+  await expect(page.locator('.status-line .status-text')).toHaveText(/^Place/);
   await shot(page, 'bot-01-setup');
-  await page.getByRole('button', { name: 'Ready' }).click();
+  await completeSetup(page);
+  await expect(game(page)).toHaveAttribute('data-phase', 'play');
 
   const { turnsPlayed, log } = await playTurnsVsBot(page, 3, (i) => simpleTurn(page, i), 'bot-');
   expect(turnsPlayed).toBe(3);

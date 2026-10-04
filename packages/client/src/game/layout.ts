@@ -13,26 +13,41 @@ export interface FanLayout {
 /**
  * Lays out the hand: cards grouped by type with a gap between groups. Portraits get a wide pitch
  * (most of the face shows); infantry overlap down to a strip that still shows rank, type and
- * reliability. Everything tightens together only when even that does not fit.
+ * reliability. Cards flagged `open` (the few you can pick right now) show whole, as long as the
+ * rest still get their strips. Everything tightens together only when even that does not fit.
  */
-export function fanLayout(kinds: CardKind[], boxW: number, cardW: number, reserveW = 0): FanLayout {
+export function fanLayout(kinds: CardKind[], boxW: number, cardW: number, reserveW = 0, open?: boolean[]): FanLayout {
   const n = kinds.length;
   const w = cardW;
   if (n === 0) return { x: [], w, total: 0 };
   const gap = Math.round(w * 0.16);
   const avail = Math.max(w, boxW - w - reserveW - 8);
   const portrait = (k: CardKind) => FAN_GROUP[k] === 0 || FAN_GROUP[k] === 3;
-  let nc = 0;
-  let ni = 0;
-  let gaps = 0;
-  for (let i = 0; i < n - 1; i++) {
-    if (portrait(kinds[i])) nc++;
-    else ni++;
-    if (FAN_GROUP[kinds[i]] !== FAN_GROUP[kinds[i + 1]]) gaps++;
-  }
   const full = w + 6;
   const strip = w * 0.3;
-  const room = avail - gaps * gap;
+  // The last card always shows whole, so only the cards before it take a pitch.
+  let gaps = 0;
+  for (let i = 0; i < n - 1; i++) if (FAN_GROUP[kinds[i]] !== FAN_GROUP[kinds[i + 1]]) gaps++;
+  const count = (opened: boolean) => {
+    let no = 0;
+    let nc = 0;
+    let ni = 0;
+    for (let i = 0; i < n - 1; i++) {
+      if (opened && open?.[i]) no++;
+      else if (portrait(kinds[i])) nc++;
+      else ni++;
+    }
+    return { no, nc, ni };
+  };
+  let isOpen = (i: number) => !!open?.[i];
+  let { no, nc, ni } = count(true);
+  // Open cards are honoured while everything else keeps at least three quarters of its strip.
+  if (no && no * full + ((nc + ni) * strip + gaps * gap) * 0.75 > avail) {
+    isOpen = () => false;
+    ({ no, nc, ni } = count(false));
+  }
+  const room = avail - gaps * gap - no * full;
+  const po = full;
   let pc = Math.min(full, Math.max(w * 0.7, w * (62 / 88)));
   let pi = ni ? (room - nc * pc) / ni : 0;
   if (ni && pi > full) {
@@ -45,10 +60,10 @@ export function fanLayout(kinds: CardKind[], boxW: number, cardW: number, reserv
     pc = Math.min(full, room / nc);
   }
   let g = gap;
-  const need = nc * pc + ni * pi + gaps * g;
-  if (need > avail && need > 0) {
-    // Not even strips fit: shrink pitches and gaps together.
-    const f = avail / need;
+  const flex = nc * pc + ni * pi + gaps * g;
+  if (no * po + flex > avail && flex > 0) {
+    // Not even strips fit: shrink the other pitches and the gaps together (open cards stay whole).
+    const f = Math.max(0, avail - no * po) / flex;
     pc *= f;
     pi *= f;
     g *= f;
@@ -57,7 +72,7 @@ export function fanLayout(kinds: CardKind[], boxW: number, cardW: number, reserv
   let at = 0;
   for (let i = 0; i < n; i++) {
     x.push(at);
-    if (i < n - 1) at += (portrait(kinds[i]) ? pc : pi) + (FAN_GROUP[kinds[i]] !== FAN_GROUP[kinds[i + 1]] ? g : 0);
+    if (i < n - 1) at += (isOpen(i) ? po : portrait(kinds[i]) ? pc : pi) + (FAN_GROUP[kinds[i]] !== FAN_GROUP[kinds[i + 1]] ? g : 0);
   }
   return { x, w, total: at + w };
 }

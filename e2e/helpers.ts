@@ -58,6 +58,86 @@ export async function version(page: Page): Promise<number> {
   return Number((await attr(page, 'data-version')) ?? -1);
 }
 
+/** Ids of the hand cards that may be placed right now (my setup turn). */
+export async function eligibleIds(page: Page): Promise<string[]> {
+  const eligible = page.locator('.reserve-fan .card.is-selectable');
+  await expect(eligible.first()).toBeAttached();
+  return eligible.evaluateAll((els) => els.map((e) => e.getAttribute('data-card') ?? ''));
+}
+
+/**
+ * Plays one of my setup turns: picks an eligible hand card (the first of `prefer` that is
+ * eligible, else the first eligible one), then clicks a setup hex (`at`, else the first). The
+ * placement is sent at once, so this waits for the version to move. Returns the placed card id.
+ */
+export async function placeSetupCard(page: Page, prefer: string[] = [], at?: string, avoid: string[] = []): Promise<string> {
+  await myMove(page, 'setup');
+  const ids = await eligibleIds(page);
+  const id = prefer.find((p) => ids.includes(p)) ?? ids.find((i) => !avoid.includes(i)) ?? ids[0]!;
+  const v = await version(page);
+  await tap(reserveCard(page, id));
+  await expect(page.locator('.reserve-fan .card.is-selected')).toHaveCount(1);
+  const target = at ? hex(page, at) : page.locator('.board-marks polygon.hit[data-mark="setup"]').first();
+  await expect(target).toHaveAttribute('data-mark', 'setup');
+  await target.dispatchEvent('click');
+  await afterVersion(page, v);
+  return id;
+}
+
+/** Where one player's cards go in a scripted setup: named cards to named hexes, the rest to `rest`. */
+export interface SetupPlan {
+  cards: Record<string, string>;
+  rest: string;
+}
+
+/**
+ * Plays PvP setup turns until the phase leaves setup, whichever page has the move placing the
+ * next planned card that is eligible (else any unplanned eligible card onto the plan's `rest` hex).
+ */
+export async function playSetupPlans(a: Page, b: Page, plans: { a: SetupPlan; b: SetupPlan }): Promise<void> {
+  const sides = [
+    { page: a, plan: plans.a },
+    { page: b, plan: plans.b },
+  ];
+  for (let guard = 0; guard < 60; guard++) {
+    if ((await attr(a, 'data-phase')) !== 'setup') return;
+    let acted = false;
+    for (const { page, plan } of sides) {
+      if ((await attr(page, 'data-acting')) === 'me' && (await attr(page, 'data-busy')) === 'false' && (await attr(page, 'data-decision')) === 'setup') {
+        const ids = await eligibleIds(page);
+        const planned = Object.keys(plan.cards).find((id) => ids.includes(id));
+        if (planned) await placeSetupCard(page, [planned], plan.cards[planned]);
+        else await placeSetupCard(page, [], plan.rest, Object.keys(plan.cards));
+        acted = true;
+        break;
+      }
+    }
+    if (!acted) await a.waitForTimeout(150);
+  }
+  await expect(game(a)).not.toHaveAttribute('data-phase', 'setup');
+}
+
+/**
+ * Plays setup turns until the phase leaves setup. With `opponent` (PvP) whichever page has the
+ * move places; otherwise the bot places on its own turns.
+ */
+export async function completeSetup(page: Page, opponent?: Page): Promise<void> {
+  const pages = opponent ? [page, opponent] : [page];
+  for (let guard = 0; guard < 60; guard++) {
+    if ((await attr(page, 'data-phase')) !== 'setup') return;
+    let acted = false;
+    for (const p of pages) {
+      if ((await attr(p, 'data-acting')) === 'me' && (await attr(p, 'data-busy')) === 'false' && (await attr(p, 'data-decision')) === 'setup') {
+        await placeSetupCard(p);
+        acted = true;
+        break;
+      }
+    }
+    if (!acted) await page.waitForTimeout(150);
+  }
+  await expect(game(page)).not.toHaveAttribute('data-phase', 'setup');
+}
+
 export interface DecisionLog {
   seen: string[];
 }
@@ -75,7 +155,11 @@ export async function answerDecision(page: Page, log: DecisionLog, label: string
   const v = await version(page);
   switch (kind) {
     case 'defend': {
-      const btn = page.getByRole('button', { name: /^Defend/ });
+      const btn = page.locator('.primary-act[data-primary="defend"]');
+      // Over three eligible cards nothing is pre-picked: pick until the button enables.
+      for (let i = 0; i < 3 && !(await btn.isEnabled()); i++) {
+        await page.locator('.card.is-selectable:not(.is-selected)').first().dispatchEvent('click');
+      }
       await expect(btn).toBeEnabled();
       await btn.click();
       break;
@@ -83,16 +167,17 @@ export async function answerDecision(page: Page, log: DecisionLog, label: string
     case 'reroll': {
       const rerolled = log.seen.filter((k) => k.endsWith(':reroll')).length > 1;
       if (!rerolled) await page.locator('.die.is-live').nth(1).click();
-      else await page.getByRole('button', { name: 'Pass' }).click();
+      else await page.locator('.primary-act[data-primary="pass"]').click();
       break;
     }
     case 'pressOrBreak': {
       const pressed = log.seen.filter((k) => k.endsWith(':pressOrBreak')).length > 1;
-      await page.getByRole('button', { name: pressed ? 'Break off' : 'Press' }).click();
+      if (pressed) await page.locator('button[data-secondary="breakOff"]').click();
+      else await page.locator('.primary-act[data-primary="press"]').click();
       break;
     }
     case 'casualties': {
-      const confirm = page.getByRole('button', { name: 'Confirm' });
+      const confirm = page.locator('.primary-act[data-primary="confirm"]');
       for (let i = 0; i < 6 && !(await confirm.isEnabled()); i++) {
         await page.locator('.clash .card.is-selectable').first().click();
       }
@@ -103,7 +188,7 @@ export async function answerDecision(page: Page, log: DecisionLog, label: string
     case 'retreat': {
       const hexes = page.locator('.board-marks polygon.hit[data-mark="retreat"]');
       if ((await hexes.count()) > 0) await hexes.first().dispatchEvent('click');
-      else await page.getByRole('button', { name: 'Stand' }).click();
+      else await page.locator('.primary-act[data-primary="stay"]').click();
       break;
     }
     default:
@@ -117,7 +202,7 @@ const ENGAGEMENT_DECISIONS = new Set(['defend', 'reroll', 'pressOrBreak', 'casua
 /**
  * Plays `turns` full turns (mine, then the bot's) against the bot from whatever state the page is
  * in. My turns use `plan(i)` (i = 0-based turn index) and then End turn; engagement decisions
- * the bot forces on me are answered as they come; a new round's setup is confirmed as placed.
+ * the bot forces on me are answered as they come; a new round's setup turns are played by placing cards.
  */
 export async function playTurnsVsBot(
   page: Page,
@@ -137,9 +222,7 @@ export async function playTurnsVsBot(
     if ((await attr(page, 'data-phase')) === 'matchOver') break;
     const kind = (await attr(page, 'data-decision')) ?? '';
     if (kind === 'setup') {
-      const v = await version(page);
-      await page.getByRole('button', { name: 'Ready' }).click();
-      await afterVersion(page, v);
+      await placeSetupCard(page);
     } else if (ENGAGEMENT_DECISIONS.has(kind)) {
       await answerDecision(page, log, 'me', prefix);
     } else if (kind === 'turn') {
@@ -150,7 +233,7 @@ export async function playTurnsVsBot(
       await expect(g).toHaveAttribute('data-busy', 'false', { timeout: 30_000 });
       if ((await attr(page, 'data-acting')) === 'me' && (await attr(page, 'data-decision')) === 'turn') {
         const v = await version(page);
-        await page.getByRole('button', { name: 'End turn' }).click();
+        await page.locator('.primary-act[data-primary="endTurn"]').click();
         await afterVersion(page, v);
       }
       done++;
@@ -168,9 +251,9 @@ export async function simpleTurn(page: Page, i: number): Promise<void> {
     await deploy.click();
     const pick = page.locator('.reserve-fan .card.is-selectable').first();
     if ((await pick.count()) > 0) {
-      await pick.dispatchEvent('click');
       const v = await version(page);
-      await page.getByRole('button', { name: /^Deploy/ }).click();
+      await pick.dispatchEvent('click');
+      await page.locator('.board-marks polygon.hit[data-mark="deploy"]').dispatchEvent('click');
       await afterVersion(page, v);
       return;
     }

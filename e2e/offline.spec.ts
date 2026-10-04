@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test';
-import { game, myMove, playTurnsVsBot, shot, simpleTurn, watchErrors } from './helpers';
+import { completeSetup, game, myMove, playTurnsVsBot, shot, simpleTurn, watchErrors } from './helpers';
 
 test('offline: with the server unreachable, Play the bot falls back to the in-browser bot', async ({ page }) => {
   const errors = watchErrors(page, 'offline');
@@ -14,6 +14,7 @@ test('offline: with the server unreachable, Play the bot falls back to the in-br
   await page.goto('/');
   await page.getByLabel('Your name').fill('Offline Olga');
   await page.getByRole('button', { name: 'Play the bot' }).click();
+  await page.getByRole('group', { name: 'Bot difficulty' }).getByRole('button', { name: 'Easy' }).click();
   await expect(page).toHaveURL(/#\/offline$/, { timeout: 15_000 });
   expect(sockets).toBeGreaterThan(0); // it did try the server first
 
@@ -22,7 +23,7 @@ test('offline: with the server unreachable, Play the bot falls back to the in-br
   await expect(page.getByRole('button', { name: /^Chat/ })).toHaveCount(0);
   await myMove(page, 'setup');
   await shot(page, 'offline-01-setup');
-  await page.getByRole('button', { name: 'Ready' }).click();
+  await completeSetup(page);
 
   const { turnsPlayed } = await playTurnsVsBot(page, 2, (i) => simpleTurn(page, i), 'offline-');
   expect(turnsPlayed).toBe(2);
@@ -36,7 +37,7 @@ test('offline: the #/offline route works directly', async ({ page }) => {
   await page.goto('/#/offline');
   await expect(game(page)).toHaveAttribute('data-phase', 'setup');
   await myMove(page, 'setup');
-  await page.getByRole('button', { name: 'Ready' }).click();
+  await completeSetup(page);
   // Offline games use a random seed: the bot may start (and attack) first, so answer whatever
   // comes up until one of my turns has been played.
   const { turnsPlayed } = await playTurnsVsBot(page, 1, (i) => simpleTurn(page, i), 'offline-direct-');

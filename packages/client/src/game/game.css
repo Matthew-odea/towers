@@ -441,6 +441,14 @@
 .mark--withdraw .mark-line {
   stroke-dasharray: 9 7;
 }
+/* The hex a dragged card would land on if released now. */
+.mark--drop .mark-fill {
+  fill: var(--storm-a35);
+}
+.mark--glow.mark--drop .mark-line {
+  stroke-width: 3;
+  animation: none;
+}
 .mark--attack .mark-fill {
   fill: rgba(191, 238, 255, 0.05);
 }
@@ -1141,6 +1149,38 @@
   animation: breathe 2.2s var(--ease-in-out) infinite;
   pointer-events: none;
   z-index: 300;
+}
+
+/* Dragging a hand card onto the board: the card follows the pointer, its slot stays faded. */
+.game--dragging,
+.game--dragging * {
+  cursor: grabbing !important;
+}
+.fan-card--lifted .card,
+.fan-card--lifted:hover .card {
+  opacity: 0.3;
+  transform: translateY(-14px);
+}
+.drag-ghost {
+  position: fixed;
+  left: 0;
+  top: 0;
+  z-index: var(--z-modal);
+  pointer-events: none;
+}
+.drag-ghost .card {
+  translate: -50% -62%;
+  rotate: -5deg;
+  box-shadow: var(--shadow-3);
+  transition:
+    rotate var(--dur-fast) var(--ease-out),
+    scale var(--dur-fast) var(--ease-out),
+    box-shadow var(--dur-fast);
+}
+.drag-ghost--over .card {
+  rotate: 0deg;
+  scale: 0.9;
+  box-shadow: var(--glow-storm), var(--shadow-3);
 }
 
 /* opponent reserve */

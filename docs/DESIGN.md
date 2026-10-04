@@ -41,7 +41,8 @@ probably on a voice call.
 ### Setup
 - Open and turn-based (RULINGS §4): one card per setup turn, placed at once, no confirm.
 - On your setup turn the cards you may place rise slightly and glow in your hand; pick one, then
-  click one of your 3 home-edge hexes (they glow once a card is picked). Commanders first
+  click one of your 3 home-edge hexes (they glow once a card is picked), or drag the card straight
+  onto one. When only a few cards can be placed (the Commanders) they show whole in the hand. Commanders first
   ("Place a Commander (1 of 2)"), then troops ("Place a card · 3 of 6").
 - The opponent's placements land on the board as they happen. While they place, your hand
   sits back (desaturated) and the status line says what they are placing.
@@ -61,6 +62,11 @@ probably on a voice call.
   option; Withdraw-to-Reserve is a drop target on your Reserve when the stack is on your Tower).
   Enemy hexes you can attack glow differently; clicking one enters engagement setup.
   Deploy: pick one Reserve card (the deployable ones glow), then click your Tower (1 CP).
+  **Drag and drop** is the alternative to pick-then-click for every hand-to-board placement:
+  drag a card onto a home-edge hex in setup, onto your Tower to Deploy, or drag the Wit onto a
+  legal hex to spawn it. While dragging, the card follows the pointer, the legal hexes glow, the
+  one under the card brightens, and the CP sphere it would cost dims; releasing anywhere else
+  puts the card back.
 - **Status line**: one compact line in a fixed place, centred just above your hand, in plain
   words: whose move it is and what is asked ("Your turn · 3 CP", "Singers' turn",
   "Defend · commit up to 3", "Reroll a die or pass", "Press or break off",

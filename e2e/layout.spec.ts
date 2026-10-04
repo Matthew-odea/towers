@@ -1,18 +1,8 @@
-import { expect, test, type Page } from '@playwright/test';
-import { afterVersion, boardCard, game, hex, myMove, reserveCard, shot, tap, version, watchErrors } from './helpers';
+import { expect, test } from '@playwright/test';
+import { afterVersion, game, hex, myMove, playSetupPlans, shot, tap, version, watchErrors } from './helpers';
 
 // Layout at the minimum supported size (1280x720): controls must stay clickable with a real
 // mouse (no dispatchEvent), even when the clash column is at its tallest.
-
-async function place(page: Page, ids: string[], at: string): Promise<void> {
-  for (const id of ids) {
-    const onBoard = boardCard(page, id);
-    if ((await onBoard.count()) > 0) await tap(onBoard);
-    else await tap(reserveCard(page, id));
-  }
-  await tap(hex(page, at));
-  for (const id of ids) await expect(boardCard(page, id)).toHaveCount(1);
-}
 
 test('1280x720: Engage stays clickable with the Wit dial over an 8-card defence; chat clears the hand', async ({ browser }) => {
   const viewport = { width: 1280, height: 720 };
@@ -28,21 +18,25 @@ test('1280x720: Engage stays clickable with the Wit dial over an 8-card defence;
   await b.getByLabel('Your name').fill('Bo');
   await b.getByRole('button', { name: 'Join' }).click();
 
-  // Red stacks both Commanders and six others on 0,2: an 8-card defence.
+  // Red stacks both Commanders and six troops on 0,2: an 8-card defence. Black keeps Light 6 + Heavy 5
+  // on 0,-2 and puts everything else elsewhere.
   await myMove(a, 'setup');
-  await place(
-    a,
-    ['red-commander-dalinar', 'red-commander-jasnah', 'red-archer-lunamor', 'red-heavy-8', 'red-light-2', 'red-light-3', 'red-light-4', 'red-light-5'],
-    '0,2',
-  );
-  await myMove(b, 'setup');
-  await place(b, ['black-light-6', 'black-heavy-5'], '0,-2');
-  await a.getByRole('button', { name: 'Ready' }).click();
-  await b.getByRole('button', { name: 'Ready' }).click();
+  await playSetupPlans(a, b, {
+    a: {
+      cards: Object.fromEntries(
+        ['red-commander-dalinar', 'red-commander-jasnah', 'red-archer-lunamor', 'red-heavy-8', 'red-light-2', 'red-light-3', 'red-light-4', 'red-light-5'].map((id) => [id, '0,2']),
+      ),
+      rest: '0,2',
+    },
+    b: {
+      cards: { 'black-commander-raboniel': '1,-2', 'black-commander-eshonai': '1,-2', 'black-light-6': '0,-2', 'black-heavy-5': '0,-2' },
+      rest: '2,-2',
+    },
+  });
 
   await myMove(a, 'turn');
   let v = await version(a);
-  await a.getByRole('button', { name: 'End turn' }).click();
+  await a.locator('.primary-act[data-primary="endTurn"]').click();
   await afterVersion(a, v);
 
   // Black spawns Wit next to the stack and commits it: the Wit dial opens.
@@ -60,7 +54,7 @@ test('1280x720: Engage stays clickable with the Wit dial over an 8-card defence;
 
   // A real click (actionability + hit test): fails if anything covers the button.
   v = await version(b);
-  await b.getByRole('button', { name: /^Engage/ }).click({ timeout: 5_000 });
+  await b.locator('.primary-act[data-primary="engage"]').click({ timeout: 5_000 });
   await afterVersion(b, v);
   await myMove(a, 'defend');
   await expect(game(a)).toHaveAttribute('data-decision', 'defend');
