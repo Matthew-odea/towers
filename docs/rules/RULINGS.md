@@ -17,8 +17,7 @@ The draft's multiplayer section does not apply — Towers is strictly 2 players.
 - Every card that was not destroyed (on the board, in Reserve, or withdrawn) is available again
   next round.
 - **All information is public**: every stack, both Reserves and both destroyed piles are
-  visible to both players. The only hidden information is the opponent's setup placement
-  until both players have confirmed (see §4).
+  visible to both players. There is no hidden information (setup is open, §4).
 - Dice are 2d6 rolled by the server with a cryptographically seeded RNG.
 
 ## 2. Armies
@@ -67,16 +66,22 @@ Characters (flavour only; all cards of a type are mechanically identical) — se
 
 ## 4. Round setup
 
+Setup is **open and turn-based** (owner change, 2026-10-04). Every placement is visible as it
+happens; nothing is hidden.
+
 1. Generate this round's terrain (§3).
-2. Both players place **simultaneously and secretly**:
-   - **both Commanders** must be placed on their home-edge hexes;
-   - **up to 6 other cards** (any available non-destroyed cards **except Wit**) may also be
-     placed on home-edge hexes, in any distribution (stacks allowed);
-   - everything else starts in **Reserve**. Wit always starts a round in Reserve.
-3. A player submits their placement once. When both have submitted, both placements are
-   revealed and play begins.
-4. **First player**: random in Round 1; afterwards it alternates (Round 2 is started by the
-   player who did not start Round 1; Round 3 by the Round 1 starter).
+2. **First player**: random in Round 1; afterwards it alternates (Round 2 is started by the
+   player who did not start Round 1; Round 3 by the Round 1 starter). The round's first player
+   also places first during setup *(ruling)*.
+3. **Commanders**: the first player places both Commanders, one at a time, anywhere on their
+   home edge (back rank); then the second player does the same.
+4. **Troops**: players then alternate, starting with the first player, each placing **exactly
+   one** card per setup turn onto one of their own home-edge hexes, until **each player has
+   placed 6** (12 setup turns). Any available non-destroyed card except Commanders and Wit may be
+   placed; stacking is allowed. A player who has run out of eligible cards skips their remaining
+   setup turns *(ruling)*.
+5. Everything not placed starts in **Reserve**. Wit always starts a round in Reserve.
+6. When setup ends, the first player takes the first turn of play.
 
 ## 5. Turns and Command Points (CP)
 
@@ -89,7 +94,7 @@ Characters (flavour only; all cards of a type are mechanically identical) — se
 |---|---|---|
 | Move | 1 | Move all or part of one stack 1 adjacent hex (§6) |
 | Engage | 1 | Start one engagement (§7) |
-| Deploy | 1 | Put 1–3 Reserve cards (not Wit) onto your Tower |
+| Deploy | 1 | Put **1** Reserve card (not Wit) onto your Tower |
 | Withdraw | 1 | Move all or part of a stack 1 hex toward your Tower, or from your Tower into Reserve (§6.4) |
 | Fortify | 2, or 1 if the stack contains Heavy Infantry | §10 |
 | Reinforce | 3 | Exactly 1 Reserve card (not Wit) to an eligible Fortified hex via a supply line (§10.3) |
@@ -275,7 +280,8 @@ Disadvantage.
   one of your Fortified hexes that has a supply line.
 
 ### 10.4 Deploy
-- 1 CP: move 1–3 Reserve cards (not Wit) onto your own Tower. Not allowed while enemy cards
+- 1 CP: move **exactly 1** Reserve card (not Wit) onto your own Tower (so at most 3 per turn,
+  by the 3-CP cap). Not allowed while enemy cards
   occupy your Tower.
 
 ## 11. Winning a round
