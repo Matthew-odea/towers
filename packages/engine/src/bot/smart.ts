@@ -10,7 +10,8 @@
 // random-legal bot.
 import { computeModifiers } from '../combat';
 import { pendingDecision, validateAction } from '../core';
-import { HOME_EDGE, TOWER, neighbors } from '../hex';
+import { HOME_EDGE, TOWER, neighbors, other, parseHex } from '../hex';
+import { nextSetupPlacer, setupEligible } from '../setup';
 import { hexOf } from '../state';
 import type { Action, AnyState, Engagement, PendingDecision, PlayerId } from '../types';
 import { evaluate } from './evaluate';
@@ -63,10 +64,15 @@ export function chooseSmartAction(
   return chooseRandomAction(s, player, rand);
 }
 
+/** The medium bot (alias of the smart heuristic search bot). */
+export const chooseMediumAction = chooseSmartAction;
+
 function decide(s: AnyState, me: PlayerId, d: PendingDecision, w: Tuning): Action[] {
   switch (d.kind) {
-    case 'setup':
-      return [smartSetup(s, me, w)];
+    case 'setup': {
+      const a = smartSetup(s, me, w);
+      return a ? [a] : [];
+    }
     case 'turn':
       return smartTurn(s, me, w);
     case 'defend':
@@ -87,44 +93,67 @@ function decide(s: AnyState, me: PlayerId, d: PendingDecision, w: Tuning): Actio
 // ---------------------------------------------------------------------------
 // Setup
 
-function smartSetup(s: AnyState, me: PlayerId, w: Tuning): Action {
-  const avail = s.reserve[me];
+/** Left/right flank of a home-edge side hex (-1 / +1, 0 for a Tower): same sign = same side of the board. */
+function flank(h: string): number {
+  const [q, r] = parseHex(h);
+  return Math.sign(2 * q + r);
+}
+
+/**
+ * One setup placement (setup is open and turn-based, RULINGS §4). The plan:
+ * - Commanders both go on the Tower (the hardest hex to reach, and escorts join them there).
+ * - The first troops are Heavy Infantry escorts on the Tower (cheap Fortify); a third escort
+ *   joins when the opponent has massed a large strike stack.
+ * - The rest form one strike group on a side hex, chosen once the escorts are down so it can
+ *   react to the opponent's visible placements: prefer the flank the opponent left weaker and
+ *   more open Plains around the hex. Once chosen it never moves.
+ */
+function smartSetup(s: AnyState, me: PlayerId, w: Tuning): Action | null {
+  const n = nextSetupPlacer(s);
+  if (!n || n.player !== me) return null;
+  const tower = TOWER[me];
+  const eligible = setupEligible(s, me);
+  if (eligible.length === 0) return null;
+  const place = (cardId: string, hex: string): Action => ({ type: 'setupPlace', player: me, placements: [{ cardId, hex }] });
+  if (n.step === 'commander') return place(eligible[0], tower);
+
   const kind = (id: string) => s.cards[id].kind;
   const ways = (id: string) => activationWays(s.cards[id]);
-  const tower = TOWER[me];
-  // Corner first, so both seats break ties the same (point-symmetric) way.
-  const sides = HOME_EDGE[me]
-    .filter((h) => h !== tower)
-    .sort((a, b) => (neighbors(a).length - neighbors(b).length) * (w.setupCorner ? 1 : -1));
-  const plainsAround = (h: string) => neighbors(h).filter((n) => s.terrain[n] === 'plains').length;
-  const strikeHex = sides[0] && sides[1] && plainsAround(sides[1]) > plainsAround(sides[0]) ? sides[1] : sides[0] ?? tower;
-  const placements: { cardId: string; hex: string }[] = [];
-  for (const id of avail) if (kind(id) === 'commander') placements.push({ cardId: id, hex: tower });
-  const others = avail.filter((id) => kind(id) !== 'commander' && kind(id) !== 'wit');
-  const used = new Set<string>();
-  // Two Heavy Infantry escorts on the Tower (cheap Fortify), best activators first.
-  const escorts = others
-    .filter((id) => kind(id) === 'heavy')
-    .sort((a, b) => ways(b) - ways(a))
-    .slice(0, 2);
-  if (escorts.length < 2) {
-    for (const id of others.filter((x) => kind(x) === 'light').sort((a, b) => ways(b) - ways(a))) {
-      if (escorts.length >= 2) break;
-      escorts.push(id);
-    }
+  const foe = other(me);
+  const mine = s.setup[me].placements.filter((p) => kind(p.cardId) !== 'commander');
+  const escortsPlaced = mine.filter((p) => p.hex === tower).length;
+  const strikePlaced = mine.filter((p) => p.hex !== tower);
+  // Opponent's visible troops per hex.
+  const foeTroops: Record<string, number> = {};
+  for (const p of s.setup[foe].placements) {
+    if (kind(p.cardId) === 'commander') continue;
+    const pri = kind(p.cardId) === 'shardbearer' || kind(p.cardId) === 'cavalry' ? 1.5 : 1;
+    foeTroops[p.hex] = (foeTroops[p.hex] ?? 0) + pri;
   }
-  for (const id of escorts) {
-    placements.push({ cardId: id, hex: tower });
-    used.add(id);
+  const foeSideMax = Math.max(0, ...HOME_EDGE[foe].filter((h) => h !== TOWER[foe]).map((h) => foeTroops[h] ?? 0));
+  const wantEscorts = foeSideMax >= 4 ? 3 : 2;
+
+  if (escortsPlaced < wantEscorts) {
+    const heavy = eligible.filter((id) => kind(id) === 'heavy').sort((a, b) => ways(b) - ways(a));
+    const light = eligible.filter((id) => kind(id) === 'light').sort((a, b) => ways(b) - ways(a));
+    const escort = heavy[0] ?? light[0];
+    if (escort) return place(escort, tower);
   }
   // Strike group: Shardbearers, Cavalry, Archers, then the most reliable infantry.
+  let strikeHex = strikePlaced[0]?.hex;
+  if (!strikeHex) {
+    const plainsAround = (h: string) => neighbors(h).filter((x) => s.terrain[x] === 'plains').length;
+    const foeOnFlank = (h: string) =>
+      HOME_EDGE[foe].filter((x) => x !== TOWER[foe] && flank(x) === flank(h)).reduce((acc, x) => acc + (foeTroops[x] ?? 0), 0);
+    const score = (h: string) => plainsAround(h) - 0.6 * foeOnFlank(h);
+    const sides = HOME_EDGE[me].filter((h) => h !== tower);
+    // Ties: point-symmetric for both seats (setupCorner flips which corner).
+    const tie = (me === 'red' ? 1 : -1) * (w.setupCorner ? 1 : -1);
+    strikeHex = sides.sort((a, b) => score(b) - score(a) || (flank(a) - flank(b)) * tie)[0] ?? tower;
+  }
   const pri: Record<string, number> = { shardbearer: 40, cavalry: 30, archer: 25, light: 0, heavy: 0 };
-  const strike = others
-    .filter((id) => !used.has(id))
-    .sort((a, b) => (pri[kind(b)] ?? 0) + ways(b) - ((pri[kind(a)] ?? 0) + ways(a)))
-    .slice(0, 6 - escorts.length);
-  for (const id of strike) placements.push({ cardId: id, hex: strikeHex });
-  return { type: 'setupPlace', player: me, placements };
+  const best = [...eligible].sort((a, b) => (pri[kind(b)] ?? 0) + ways(b) - ((pri[kind(a)] ?? 0) + ways(a)))[0];
+  return place(best, strikeHex);
 }
 
 // ---------------------------------------------------------------------------

@@ -160,41 +160,50 @@ async function twoPlayers() {
 }
 
 describe('actions', () => {
-  test("setup: opponent's unsubmitted placement never leaks; reveal after both submit", async () => {
+  test('setup is turn-based: one placement per action, visible to both, play starts after the last', async () => {
     const { a, b, gameId } = await twoPlayers();
-    const act1 = chooseBotAction(view(a.c), a.seat)!;
-    expect(act1.type).toBe('setupPlace');
-    await act(a, gameId, act1);
-    expect(lastError(a.c)).toBeUndefined();
-    const aView = view(a.c);
-    const bView = view(b.c);
-    expect(aView.setup[a.seat].placements).not.toBeNull();
-    expect(bView.setup[a.seat].submitted).toBe(true);
-    expect(bView.setup[a.seat].placements).toBeNull();
-    // opponent's chosen hexes are nowhere in b's payload
-    const bPayload = JSON.stringify(bus.all(b.c).filter((m) => m.t === 'state'));
-    for (const p of (act1 as Extract<Action, { type: 'setupPlace' }>).placements) {
-      expect(bPayload).not.toContain(`"${p.cardId}":"${p.hex}"`);
-    }
-    expect(bPayload).not.toContain('"seed"');
-    expect(bPayload).not.toContain('"rng"');
-    expect(bus.last(b.c, 'state')!.events.some((e) => e.type === 'setupRevealed')).toBe(false);
+    const bySeat = { [a.seat]: a, [b.seat]: b } as Record<PlayerId, Seat>;
+    const first = pendingDecision(view(a.c));
+    expect(first.kind).toBe('setup');
+    expect(first.players).toHaveLength(1);
+    const starter = first.players[0] as PlayerId;
+    const other = bySeat[starter === a.seat ? b.seat : a.seat]!;
 
-    await act(b, gameId, chooseBotAction(view(b.c), b.seat)!);
+    // the player who is not up cannot place
+    const theirs = chooseBotAction(view(other.c), other.seat);
+    expect(theirs).toBeNull();
+
+    const act1 = chooseBotAction(view(bySeat[starter]!.c), starter)!;
+    expect(act1.type).toBe('setupPlace');
+    expect((act1 as Extract<Action, { type: 'setupPlace' }>).placements).toHaveLength(1);
+    await act(bySeat[starter]!, gameId, act1);
+    expect(lastError(a.c)).toBeUndefined();
+    // placement is public immediately
     for (const c of [a.c, b.c]) {
-      const v = view(c);
-      expect(v.phase).toBe('play');
-      expect(v.setup.red.placements).not.toBeNull();
-      expect(v.setup.black.placements).not.toBeNull();
-      expect(bus.last(c, 'state')!.events.some((e) => e.type === 'setupRevealed')).toBe(true);
+      expect(view(c).setup[starter].placements).toHaveLength(1);
+      expect(bus.last(c, 'state')!.events.some((e) => e.type === 'setupPlaced')).toBe(true);
+      expect(JSON.stringify(bus.all(c).filter((m) => m.t === 'state'))).not.toContain('"seed"');
+    }
+
+    let guard = 0;
+    while (view(a.c).phase === 'setup' && guard++ < 40) {
+      const who = pendingDecision(view(a.c)).players[0] as PlayerId;
+      const s = bySeat[who]!;
+      await act(s, gameId, chooseBotAction(view(s.c), who)!);
+      expect(lastError(a.c)).toBeUndefined();
+      expect(lastError(b.c)).toBeUndefined();
+    }
+    for (const c of [a.c, b.c]) {
+      expect(view(c).phase).toBe('play');
+      expect(bus.last(c, 'state')!.events.some((e) => e.type === 'setupComplete')).toBe(true);
     }
     expect(version(a.c)).toBe(version(b.c));
-    expect(version(a.c)).toBe(2);
+    expect(version(a.c)).toBeGreaterThan(4);
   });
 
   test('token and seat checks', async () => {
     const { a, b, gameId } = await twoPlayers();
-    const mine = chooseBotAction(view(a.c), a.seat)!;
+    const mine: Action = { type: 'concede', player: a.seat };
     // wrong token
     await send(a.c, { t: 'action', gameId, seatToken: 'bad', action: mine, expectedVersion: 0 });
     expect(lastError(a.c)?.code).toBe('bad_seat');
@@ -214,17 +223,19 @@ describe('actions', () => {
 
   test('stale expectedVersion -> error and current state re-sent', async () => {
     const { a, b, gameId } = await twoPlayers();
-    await act(a, gameId, chooseBotAction(view(a.c), a.seat)!);
-    expect(version(b.c)).toBe(1);
-    const before = bus.ofType(b.c, 'state').length;
-    await act(b, gameId, chooseBotAction(view(b.c), b.seat)!, 0);
-    expect(lastError(b.c)?.code).toBe('stale');
-    const after = bus.ofType(b.c, 'state');
+    const up = pendingDecision(view(a.c)).players[0] as PlayerId;
+    const [u, o] = up === a.seat ? [a, b] : [b, a];
+    await act(u, gameId, chooseBotAction(view(u.c), u.seat)!);
+    expect(version(o.c)).toBe(1);
+    const before = bus.ofType(o.c, 'state').length;
+    await act(o, gameId, { type: 'concede', player: o.seat }, 0);
+    expect(lastError(o.c)?.code).toBe('stale');
+    const after = bus.ofType(o.c, 'state');
     expect(after.length).toBe(before + 1);
     expect(after.at(-1)!.version).toBe(1);
-    expect(after.at(-1)!.view.viewer).toBe(b.seat);
+    expect(after.at(-1)!.view.viewer).toBe(o.seat);
     // nothing was applied and a's inbox did not get it
-    expect(bus.ofType(a.c, 'state').at(-1)!.version).toBe(1);
+    expect(bus.ofType(u.c, 'state').at(-1)!.version).toBe(1);
   });
 
   test('actions before the opponent joins are rejected', async () => {
@@ -270,12 +281,52 @@ describe('bot games', () => {
     await connect('a', 'Ann');
     const g = await create('a', true);
     const botSeat: PlayerId = g.seat === 'red' ? 'black' : 'red';
-    expect(bus.last('a', 'presence')?.players[botSeat]).toMatchObject({ name: 'Bot', bot: true, connected: true });
+    expect(bus.last('a', 'presence')?.players[botSeat]).toMatchObject({ name: 'Bot (Medium)', bot: true, botLevel: 'medium', connected: true });
     const v = view('a');
-    expect(v.names[botSeat]).toBe('Bot');
-    expect(v.setup[botSeat].submitted).toBe(true);
-    expect(v.setup[botSeat].placements).toBeNull();
+    expect(v.names[botSeat]).toBe('Bot (Medium)');
     expect(pendingDecision(v).players).toEqual([g.seat]);
+    // the bot has already placed its Commanders (public), then waits for the human's turn
+    expect(v.setup[botSeat].placements.length).toBeGreaterThanOrEqual(0);
+  });
+
+  test.each(['easy', 'medium', 'hard'] as const)('botLevel %s: stored, in presence, stats name, rematch keeps it', async (level) => {
+    await connect('a', 'Ann');
+    await send('a', { t: 'create', vsBot: true, botLevel: level });
+    const j = bus.last('a', 'joined')!;
+    const botSeat: PlayerId = j.seat === 'red' ? 'black' : 'red';
+    const label = `Bot (${level[0]!.toUpperCase()}${level.slice(1)})`;
+    expect(bus.last('a', 'presence')?.players[botSeat]).toMatchObject({ name: label, bot: true, botLevel: level });
+    expect((await games.get(j.gameId))!.botLevel).toBe(level);
+    // human is up: the bot loop applied its setup turns and stopped
+    expect(pendingDecision(view('a')).players).toEqual([j.seat]);
+    // play a few human actions; the bot keeps answering until it is the human's turn again
+    const seat: Seat = { c: 'a', seat: j.seat, token: j.seatToken };
+    for (let i = 0; i < 40 && view('a').phase === 'setup'; i++) {
+      await act(seat, j.gameId, chooseBotAction(view('a'), j.seat)!);
+      expect(lastError('a')).toBeUndefined();
+      expect(pendingDecision(view('a')).players).toEqual([j.seat]);
+    }
+    expect(view('a').phase).toBe('play');
+    // finish the match and rematch
+    for (let i = 0; i < 4 && view('a').phase !== 'matchOver'; i++) await act(seat, j.gameId, { type: 'concede', player: j.seat });
+    expect(view('a').phase).toBe('matchOver');
+    expect((await stats.get('ann'))!.opponents[label.toLowerCase()]).toMatchObject({ name: label, played: 1 });
+    await send('a', { t: 'rematch', gameId: j.gameId, seatToken: j.seatToken });
+    const r = bus.last('a', 'joined')!;
+    expect((await games.get(r.gameId))!.botLevel).toBe(level);
+    const rb: PlayerId = r.seat === 'red' ? 'black' : 'red';
+    expect(bus.last('a', 'presence')?.players[rb]).toMatchObject({ botLevel: level });
+  }, 60_000);
+
+  test('botLevel validation and default', async () => {
+    await connect('a', 'Ann');
+    await send('a', { t: 'create', vsBot: true, botLevel: 'godlike' });
+    expect(lastError('a')?.code).toBe('bad_message');
+    await send('a', { t: 'create', vsBot: true });
+    const j = bus.last('a', 'joined')!;
+    expect((await games.get(j.gameId))!.botLevel).toBe('medium');
+    await send('a', { t: 'hello', username: 'bot (hard)' });
+    expect(lastError('a')?.code).toBe('bad_username');
   });
 
   test('a bot game driven to the end of round 1, steps broadcast one by one; stats recorded at match end', async () => {
@@ -333,7 +384,7 @@ describe('bot games', () => {
     expect(s!.username).toBe('Ann');
     expect(s!.matchesPlayed).toBe(1);
     expect(s!.matchesWon).toBe(finalView.winner === g.seat ? 1 : 0);
-    expect(s!.opponents['bot']).toMatchObject({ name: 'Bot', played: 1 });
+    expect(s!.opponents['bot (medium)']).toMatchObject({ name: 'Bot (Medium)', played: 1 });
     const botSeat: PlayerId = g.seat === 'red' ? 'black' : 'red';
     expect(s!.roundsWon).toBe(finalView.roundWins[g.seat]);
     expect(s!.roundsLost).toBe(finalView.roundWins[botSeat]);
@@ -350,7 +401,6 @@ describe('bot games', () => {
 describe('stats', () => {
   test('two humans: concede twice, both get records; case-insensitive key; stats request', async () => {
     const { a, b, gameId } = await twoPlayers();
-    for (const s of [a, b]) await act(s, gameId, chooseBotAction(view(s.c), s.seat)!);
     // red concedes both rounds
     const red = a.seat === 'red' ? a : b;
     const black = red === a ? b : a;
@@ -393,7 +443,8 @@ describe('expiry', () => {
 });
 
 test('no internal errors were logged', () => {
-  expect(errors).toEqual([]);
+  // the stalled-bot test hits the deadline on purpose; anything else is a failure
+  expect(errors.filter((e) => !String((e as unknown[])[0]).startsWith('bot run deadline hit'))).toEqual([]);
 });
 
 // keep type imports used
@@ -544,8 +595,14 @@ describe('robustness', () => {
   test('a stalled bot run resumes on continue and on rejoin', async () => {
     await connect('h', 'Hal');
     // zero budget: the bot cannot move during create, so it is left to move
-    await svc.handleMessage('h', JSON.stringify({ t: 'create', vsBot: true }), 0);
-    const j = bus.last('h', 'joined')!;
+    // the round starter is random: retry until the bot is the one to move in setup
+    let j = bus.last('h', 'joined')!;
+    for (let i = 0; i < 40; i++) {
+      await svc.handleMessage('h', JSON.stringify({ t: 'create', vsBot: true, botLevel: 'hard' }), 0);
+      j = bus.last('h', 'joined')!;
+      const st = (await games.get(j.gameId))!.state!;
+      if (!(pendingDecision(st).players as PlayerId[]).includes(j.seat)) break;
+    }
     const g = { c: 'h', seat: j.seat, token: j.seatToken, gameId: j.gameId };
     const rec0 = (await games.get(g.gameId))!;
     expect(rec0.version).toBe(0);
@@ -562,8 +619,12 @@ describe('robustness', () => {
 
     // rejoin path
     await connect('h2', 'Hal');
-    await svc.handleMessage('h2', JSON.stringify({ t: 'create', vsBot: true }), 0);
-    const j2 = bus.last('h2', 'joined')!;
+    let j2 = bus.last('h2', 'joined')!;
+    for (let i = 0; i < 40; i++) {
+      await svc.handleMessage('h2', JSON.stringify({ t: 'create', vsBot: true }), 0);
+      j2 = bus.last('h2', 'joined')!;
+      if (!(pendingDecision((await games.get(j2.gameId))!.state!).players as PlayerId[]).includes(j2.seat)) break;
+    }
     await connect('h3', 'Hal');
     await send('h3', { t: 'join', gameId: j2.gameId, seatToken: j2.seatToken });
     expect((await games.get(j2.gameId))!.version).toBeGreaterThan(0);

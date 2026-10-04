@@ -1,7 +1,8 @@
 // applyAction, validateAction, viewFor, pendingDecision.
 import { autoEndTurn, dispatch } from './actions';
 import { defenderMax, rerollOptions } from './engagement';
-import { CP_ACTION_TYPES, CP_CAP_PER_TYPE, PLAYERS, deepClone, isPlayer, stackAt } from './state';
+import { nextSetupPlacer, setupCounters, setupEligible, setupHexes } from './setup';
+import { CP_ACTION_TYPES, CP_CAP_PER_TYPE, deepClone, isPlayer, stackAt } from './state';
 import type {
   Action,
   AnyState,
@@ -52,7 +53,7 @@ export function isLegal(state: AnyState, action: Action): boolean {
   return validateAction(state, action) === null;
 }
 
-/** The state as `player` may see it: no RNG/seed/forced dice, opponent's unrevealed setup redacted. */
+/** The state as `player` may see it: no RNG/seed/forced dice. Everything else is public (setup is open). */
 export function viewFor(state: AnyState, player: PlayerId): PlayerView {
   const c = deepClone(state) as Partial<MatchState> & Partial<PlayerView>;
   delete c.rng;
@@ -60,16 +61,25 @@ export function viewFor(state: AnyState, player: PlayerId): PlayerView {
   delete c.diceQueue;
   const view = c as PlayerView;
   view.viewer = player;
-  if (view.phase === 'setup') {
-    for (const p of PLAYERS) if (p !== player) view.setup[p] = { submitted: view.setup[p].submitted, placements: null };
-  }
   return view;
 }
 
 /** Who must act now and what they must decide. Works on MatchState or PlayerView. */
 export function pendingDecision(s: AnyState): PendingDecision {
   if (s.phase === 'matchOver') return { kind: 'matchOver', players: [], winner: s.winner! };
-  if (s.phase === 'setup') return { kind: 'setup', players: PLAYERS.filter((p) => !s.setup[p].submitted) };
+  if (s.phase === 'setup') {
+    // Setup always ends inside the action that completes it, so `n` is only null for a malformed state.
+    const n = nextSetupPlacer(s) ?? { player: s.roundStarter, step: 'troop' as const };
+    return {
+      kind: 'setup',
+      players: [n.player],
+      player: n.player,
+      step: n.step,
+      eligible: setupEligible(s, n.player),
+      hexes: setupHexes(n.player),
+      ...setupCounters(s),
+    };
+  }
   const e = s.engagement;
   if (e) {
     switch (e.stage) {

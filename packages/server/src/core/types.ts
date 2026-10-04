@@ -1,5 +1,5 @@
 import type { MatchState, PlayerId } from '@towers/engine';
-import type { PlayerStats, ServerMessage } from './protocol';
+import type { BotDifficulty, PlayerStats, ServerMessage } from './protocol';
 
 export interface SeatRecord {
   name: string;
@@ -21,6 +21,8 @@ export interface GameRecord {
   /** Game version: bumped on every applied action (including bot steps). */
   version: number;
   vsBot: boolean;
+  /** Bot difficulty for vs-bot games (absent on old records = medium). */
+  botLevel?: BotDifficulty;
   seats: Record<PlayerId, SeatRecord | null>;
   /** null until both seats are filled. */
   state: MatchState | null;

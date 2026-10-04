@@ -83,6 +83,7 @@ function cloneView(v: PlayerView): PlayerView {
     fortified: { ...v.fortified },
     towerCount: { ...v.towerCount },
     turn: v.turn ? { ...v.turn } : null,
+    setup: { red: { ...v.setup.red, placements: [...v.setup.red.placements] }, black: { ...v.setup.black, placements: [...v.setup.black.placements] } },
   };
 }
 
@@ -168,26 +169,35 @@ export function framesFor(d0: Display, e: GameEvent): Frame[] {
   switch (e.type) {
     case 'roundStarted': {
       const d = next(d0, { banner: null, clash: null });
+      // Every card still in play goes back to Reserve for the new setup.
+      for (const ids of Object.values(d.view.stacks)) {
+        for (const id of ids) {
+          const owner = d.view.cards[id]?.owner;
+          if (owner && !d.view.reserve[owner].includes(id)) d.view.reserve[owner].push(id);
+        }
+      }
       d.view.terrain = e.terrain;
       d.view.stacks = {};
       d.view.fortified = {};
       d.view.round = e.round;
       d.view.phase = 'setup';
       d.view.turn = null;
+      d.view.roundStarter = e.firstPlayer;
+      d.view.setup = { red: { placements: [] }, black: { placements: [] } };
       return [{ d, ms: 350 }];
     }
-    case 'setupSubmitted':
-      return [{ d: next(d0, { banner: d0.banner }), ms: 120 }];
-    case 'setupRevealed': {
+    case 'setupPlaced': {
+      // Open setup: each placement lands on the board as it happens.
+      const d = next(d0, { pulse: e.hex });
+      removeFromPiles(d.view, [e.cardId]);
+      addToHex(d.view, [e.cardId], e.hex);
+      d.view.setup[e.player].placements.push({ cardId: e.cardId, hex: e.hex });
+      return [{ d, ms: 460 }];
+    }
+    case 'setupComplete': {
       const d = next(d0);
-      for (const p of ['red', 'black'] as const) {
-        for (const pl of e.placements[p]) {
-          removeFromPiles(d.view, [pl.cardId]);
-          addToHex(d.view, [pl.cardId], pl.hex);
-        }
-      }
       d.view.phase = 'play';
-      return [{ d, ms: 800 }];
+      return [{ d, ms: 300 }];
     }
     case 'turnStarted': {
       const d = next(d0);

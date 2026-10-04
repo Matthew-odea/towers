@@ -1,5 +1,7 @@
 import { describe, expect, test } from 'vitest';
 import {
+  BOT_LEVELS,
+  normalizeBotLevel,
   activationProbability,
   applyAction,
   buildArmy,
@@ -221,6 +223,70 @@ describe('chooseBotAction (random)', () => {
 
   test('returns null when the player has nothing to decide', () => {
     expect(chooseBotAction(buildState(), 'black')).toBeNull();
+  });
+});
+
+describe('bot levels', () => {
+  test('BOT_LEVELS and the smart -> medium alias', () => {
+    expect(BOT_LEVELS).toEqual(['easy', 'medium', 'hard', 'random']);
+    expect(normalizeBotLevel('smart')).toBe('medium');
+    expect(normalizeBotLevel('hard')).toBe('hard');
+    expect(normalizeBotLevel('nope')).toBeNull();
+  });
+
+  test('every level answers every setup step and engagement decision legally', () => {
+    let s = createMatch({ seed: 'levels', firstPlayer: 'black' });
+    const states: MatchState[] = [];
+    // Walk through the whole setup with the medium bot, collecting each step.
+    while (s.phase === 'setup') {
+      states.push(s);
+      const p = pendingDecision(s).players[0]!;
+      s = mustApply(s, chooseBotAction(viewFor(s, p), p)!).state;
+    }
+    const b = buildState({ board: { '0,1': ['red:K1', 'red:L8'], '0,0': ['black:K1', 'black:L2', 'black:W'] }, dice: [2, 5, 1, 2, 3, 4] });
+    states.push(s, b, mustApply(b, engage('red', '0,0', ['red:K1', 'red:L8'])).state);
+    for (const level of [...BOT_LEVELS, 'smart'] as const) {
+      for (const st of states) {
+        for (const p of pendingDecision(st).players) {
+          const a = chooseBotAction(viewFor(st, p), p, { level });
+          expect(a, `${level} at ${pendingDecision(st).kind}`).not.toBeNull();
+          expect(validateAction(st, a!)).toBeNull();
+        }
+      }
+    }
+  });
+
+  test('medium setup: Commanders on the Tower, Heavy escorts, one strike group; reacts to a massed enemy flank', () => {
+    let s = createMatch({ seed: 'medium-setup', firstPlayer: 'black' });
+    // Black masses Shardbearers and Cavalry on its 0,-2 corner.
+    const blackPlan = ['black:S1', 'black:S2', 'black:V1', 'black:V2', 'black:A1', 'black:A2'].map(c);
+    while (s.phase === 'setup') {
+      const d = pendingDecision(s);
+      if (d.kind !== 'setup') break;
+      let a: Action;
+      if (d.player === 'black' && d.step === 'troop') {
+        a = { type: 'setupPlace', player: 'black', placements: [{ cardId: blackPlan.shift()!, hex: '0,-2' }] };
+      } else a = chooseBotAction(viewFor(s, d.player), d.player)!;
+      s = mustApply(s, a).state;
+    }
+    const red = s.setup.red.placements;
+    expect(red.filter((x) => s.cards[x.cardId].kind === 'commander').every((x) => x.hex === '-1,2')).toBe(true);
+    const troops = red.filter((x) => s.cards[x.cardId].kind !== 'commander');
+    expect(troops).toHaveLength(6);
+    const escorts = troops.filter((x) => x.hex === '-1,2');
+    expect(escorts).toHaveLength(3);
+    expect(escorts.every((x) => s.cards[x.cardId].kind === 'heavy')).toBe(true);
+    const strikeHexes = new Set(troops.filter((x) => x.hex !== '-1,2').map((x) => x.hex));
+    // Black massed on its left flank (0,-2), so Red strikes down the other flank (0,2).
+    expect([...strikeHexes]).toEqual(['0,2']);
+  });
+
+  test('medium deploys exactly one card', () => {
+    const s = buildState({ board: { '0,0': ['red:K1', 'red:K2'], '1,-1': ['black:K1', 'black:K2'] } });
+    for (const level of BOT_LEVELS) {
+      const a = chooseBotAction(s, 'red', { level, rand: () => 0.5 });
+      if (a?.type === 'deploy') expect(a.cardIds).toHaveLength(1);
+    }
   });
 });
 

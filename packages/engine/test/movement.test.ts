@@ -240,12 +240,15 @@ describe('§6.5 Spawn Wit', () => {
 });
 
 describe('§10.4 Deploy', () => {
-  test('1–3 Reserve cards onto own Tower for 1 CP', () => {
+  test('exactly 1 Reserve card onto own Tower for 1 CP', () => {
     const s = buildState();
-    const r = mustApply(s, { type: 'deploy', player: 'red', cardIds: [c('red:L7'), c('red:H4'), c('red:A1')] });
-    expect(r.state.stacks['-1,2']).toHaveLength(3);
+    const r = mustApply(s, { type: 'deploy', player: 'red', cardIds: [c('red:L7')] });
+    expect(r.state.stacks['-1,2']).toEqual([c('red:L7')]);
     expect(r.state.turn!.cp).toBe(3);
-    expect(mustReject(s, { type: 'deploy', player: 'red', cardIds: ['red:L2', 'red:L3', 'red:L4', 'red:L5'].map(c) })).toMatch(/1–3/);
+    expect(r.events).toContainEqual({ type: 'deployed', player: 'red', cardIds: [c('red:L7')], hex: '-1,2' });
+    expect(mustReject(s, { type: 'deploy', player: 'red', cardIds: [c('red:L7'), c('red:H4')] })).toMatch(/exactly 1 card/);
+    expect(mustReject(s, { type: 'deploy', player: 'red', cardIds: [] })).toMatch(/exactly 1 card/);
+    expect(deployInfo(s, 'red')).toMatchObject({ legal: true, max: 1, hex: '-1,2' });
   });
 
   test('not while enemy cards occupy your Tower; only Reserve cards', () => {

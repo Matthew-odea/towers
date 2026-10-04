@@ -1,8 +1,9 @@
 // Testing helpers: build play-phase states from a compact description and force dice.
 // Exported from the package as `testing` (import { testing } from '@towers/engine').
-import { CHARACTERS, buildAllCards, buildArmy } from './cards';
+import { CHARACTERS, buildAllCards, buildArmy, waysToRoll } from './cards';
 import { applyAction } from './core';
-import { ALL_HEXES, TOWER, isHex } from './hex';
+import { ALL_HEXES, HOME_EDGE, TOWER, isHex } from './hex';
+import { nextSetupPlacer, setupEligible } from './setup';
 import { seedRng } from './rng';
 import { PLAYERS, emptyTurn, isPlayer } from './state';
 import type {
@@ -172,8 +173,8 @@ export function buildState(spec: TestStateSpec = {}): MatchState {
     fortified,
     towerCount: { red: spec.towerCount?.red ?? 0, black: spec.towerCount?.black ?? 0 },
     setup: {
-      red: { submitted: true, placements: [] },
-      black: { submitted: true, placements: [] },
+      red: { placements: [] },
+      black: { placements: [] },
     },
     turn,
     engagement: null,
@@ -215,4 +216,54 @@ export function mustReject(state: MatchState, action: Action): string {
 /** Events of one type, typed. */
 export function eventsOf<T extends GameEvent['type']>(events: GameEvent[], type: T): Extract<GameEvent, { type: T }>[] {
   return events.filter((e): e is Extract<GameEvent, { type: T }> => e.type === type);
+}
+
+/** Planned setup placements per player, in order, as [cardRef, hex]. */
+export type SetupPlan = Partial<Record<PlayerId, [string, HexKey][]>>;
+
+const FILL_KIND_ORDER = ['light', 'heavy', 'archer', 'cavalry', 'shardbearer'];
+
+/**
+ * Plays the current round's setup to completion (RULINGS §4 order) and returns the play-phase
+ * state plus every event. On each setup turn the acting player uses the first entry of their plan
+ * that is legal for the current step. When their plan has nothing usable, Commanders go on their
+ * Tower and troops are filled with the least useful eligible card (Light Infantry 2, 3, 4, 10, 5,
+ * 9, ... then Heavy Infantry in the same order) on HOME_EDGE[p][0] (red "-2,2", black "0,-2").
+ * Every player always places 6 troops if they have them (setup turns cannot be skipped).
+ */
+export function completeSetup(state: MatchState, plan: SetupPlan = {}): { state: MatchState; events: GameEvent[] } {
+  let s = state;
+  const events: GameEvent[] = [];
+  const queue: Record<PlayerId, [string, HexKey][]> = {
+    red: (plan.red ?? []).map(([r, h]) => [card(r), h]),
+    black: (plan.black ?? []).map(([r, h]) => [card(r), h]),
+  };
+  const round = s.round;
+  for (let guard = 0; guard < 40 && s.phase === 'setup' && s.round === round; guard++) {
+    const n = nextSetupPlacer(s);
+    if (!n) break;
+    const p = n.player;
+    const eligible = setupEligible(s, p);
+    const i = queue[p].findIndex(([id]) => eligible.includes(id));
+    let cardId: string;
+    let hex: HexKey;
+    if (i >= 0) {
+      [cardId, hex] = queue[p][i];
+      queue[p].splice(i, 1);
+    } else if (n.step === 'commander') {
+      cardId = eligible[0];
+      hex = TOWER[p];
+    } else {
+      const kindOrder = (id: string) => FILL_KIND_ORDER.indexOf(s.cards[id].kind);
+      const ways = (id: string) => (s.cards[id].rank ? waysToRoll(s.cards[id].rank!) : 0);
+      cardId = [...eligible].sort(
+        (a, b) => kindOrder(a) - kindOrder(b) || ways(a) - ways(b) || (s.cards[a].rank ?? 0) - (s.cards[b].rank ?? 0),
+      )[0];
+      hex = HOME_EDGE[p][0];
+    }
+    const r = mustApply(s, { type: 'setupPlace', player: p, placements: [{ cardId, hex }] });
+    s = r.state;
+    events.push(...r.events);
+  }
+  return { state: s, events };
 }

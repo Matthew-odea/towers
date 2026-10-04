@@ -259,6 +259,7 @@ export interface DeployInfo {
   reason: string | null;
   hex: HexKey;
   cards: string[];
+  /** Cards per Deploy action: 1 (0 when nothing is deployable). */
   max: number;
 }
 
@@ -268,7 +269,7 @@ export function deployInfo(s: AnyState, player: PlayerId): DeployInfo {
     cards.length === 0
       ? 'No deployable cards in Reserve.'
       : validateAction(s, { type: 'deploy', player, cardIds: [cards[0]] });
-  return { legal: reason === null, reason, hex: TOWER[player], cards, max: Math.min(3, cards.length) };
+  return { legal: reason === null, reason, hex: TOWER[player], cards, max: Math.min(1, cards.length) };
 }
 
 /** Legal Combat Retreat hexes for the engagement in progress (empty if none). */

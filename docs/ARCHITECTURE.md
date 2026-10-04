@@ -72,13 +72,13 @@ export type HexKey = string;
 export interface Card { id: string; owner: PlayerId; kind: CardKind; rank?: number; character?: string }
 
 export interface MatchState { /* engine-defined; JSON-serialisable; includes rng state */ }
-export type PlayerView = /* MatchState minus rng, with opponent's unrevealed setup redacted */;
+export type PlayerView = /* MatchState minus seed/rng/forced dice; nothing else is hidden (setup is open) */;
 
 export type Action =
-  | { type: 'setupPlace'; player: PlayerId; placements: { cardId: string; hex: HexKey }[] }
+  | { type: 'setupPlace'; player: PlayerId; placements: { cardId: string; hex: HexKey }[] }   // exactly one placement per setup turn
   | { type: 'move'; player: PlayerId; cardIds: string[]; from: HexKey; path: HexKey[] }      // path length 1, or 2 for a Cavalry Plains move
   | { type: 'withdraw'; player: PlayerId; cardIds: string[]; from: HexKey; to: HexKey | 'reserve' }
-  | { type: 'deploy'; player: PlayerId; cardIds: string[] }
+  | { type: 'deploy'; player: PlayerId; cardIds: string[] }                                  // exactly one card id
   | { type: 'fortify'; player: PlayerId; hex: HexKey }
   | { type: 'reinforce'; player: PlayerId; cardId: string; hex: HexKey }
   | { type: 'spawnWit'; player: PlayerId; hex: HexKey }
@@ -99,7 +99,9 @@ export function applyAction(state: MatchState, action: Action):
   | { ok: false; error: string };            // never throws on bad input; never mutates `state`
 export function viewFor(state: MatchState, player: PlayerId): PlayerView;
 export function pendingDecision(state: MatchState | PlayerView): PendingDecision;  // who must act, and what kind of decision
-export function chooseBotAction(state: MatchState, player: PlayerId): Action | null; // null when the bot has nothing to decide
+export type BotLevel = 'easy' | 'medium' | 'hard' | 'random';                          // 'smart' accepted as an alias of 'medium'
+export function chooseBotAction(state: MatchState | PlayerView, player: PlayerId,
+  opts?: { level?: BotLevel; rand?: () => number }): Action | null;                     // default 'medium'; null when the bot has nothing to decide
 // Query helpers used by UI and bot (all accept MatchState | PlayerView):
 //   legal move destinations for a card selection, engageable targets, eligible attackers for a target,
 //   eligible defenders, legal retreat hexes, spawn hexes, fortify cost/legality, supply check,
@@ -109,11 +111,19 @@ export function chooseBotAction(state: MatchState, player: PlayerId): Action | n
 - `GameEvent` is a discriminated union describing what happened (moves, dice rolled, rerolls,
   activations, outcome, casualties, retreats, fortify, deploy, tower count, round/match won,
   etc.) — the client animates from these and builds the move log.
-- `PendingDecision` tells each client exactly what (if anything) it must do now: `setup`,
-  `turn` (free actions), `defend`, `reroll` (with the usable reroll options), `pressOrBreak`,
+- `PendingDecision` tells each client exactly what (if anything) it must do now: `setup`
+  (`{ player, step: 'commander' | 'troop', eligible, hexes, placed, commandersLeft, troopsLeft }`:
+  one player places one card per setup turn; open setup, RULINGS §4), `turn` (free actions), `defend`, `reroll` (with the usable reroll options), `pressOrBreak`,
   `casualties` (chooser, count, eligible card ids, whose cards), `retreat` (legal hexes),
   `matchOver`. Decisions with exactly one legal choice are auto-resolved by the engine so
   humans are never asked a question with one answer.
+- Setup is open and turn-based: the round starter places both Commanders, then the other
+  player; then troops alternate from the starter, one card per action, until each has placed 6
+  (a player out of eligible cards is skipped). Each placement emits `setupPlaced`; the last one
+  emits `setupComplete` and the starter's `turnStarted`.
+- Bot levels: `easy` (`src/bot/easy.ts`), `medium` (`src/bot/smart.ts`, the heuristic search
+  bot), `hard` (`src/bot/hard/`), `random` (`src/bot/random.ts`), dispatched in
+  `src/bot/index.ts`. `easy`/`hard` currently delegate to `medium`.
 - There is no round-over decision: when a round is won the engine goes straight into the next
   round's `setup` (or `matchOver`). Clients show the result from the `roundWon` event and the
   `roundResults` history in the state.
@@ -126,7 +136,7 @@ export function chooseBotAction(state: MatchState, player: PlayerId): Action | n
 Client → server:
 ```
 { t: 'hello', username }                                   -> { t: 'welcome', username }
-{ t: 'create', vsBot: boolean }                            -> { t: 'joined', gameId, seat, seatToken }
+{ t: 'create', vsBot: boolean, botLevel?: 'easy'|'medium'|'hard' } -> { t: 'joined', gameId, seat, seatToken }
 { t: 'join', gameId, seatToken? }                          -> { t: 'joined', gameId, seat, seatToken } | error 'full' | 'not_found'
 { t: 'action', gameId, seatToken, action, expectedVersion }-> broadcast 'state' | error
 { t: 'chat', gameId, seatToken, text }                     -> broadcast 'chat'
@@ -138,12 +148,29 @@ Server → client:
 ```
 { t: 'state', gameId, view: PlayerView, events: GameEvent[], version }
 { t: 'chat', gameId, from: PlayerId, name, text, ts }       // from = seat, name = display name
-{ t: 'presence', gameId, players: { red: { name, connected, bot }, black: { ... } } }
+{ t: 'presence', gameId, players: { red: { name, connected, bot, botLevel? }, black: { ... } } }  // botLevel only on the bot seat
 { t: 'rematch', gameId, next, by }                         // the finished game's follow-up game
 { t: 'error', code, message }
 ```
 - The protocol types live in `packages/server/src/core/protocol.ts` (`@towers/server/protocol`);
   the client imports them with `import type`.
+- **Bot difficulty.** `botLevel` is optional and only meaningful with `vsBot: true`; the default is
+  `'medium'`, and any other value is rejected with `bad_message`. The server stores it on the game
+  record (`GameRecord.botLevel`), passes it to `chooseBotAction(state, seat, { level })` for every bot
+  step, reports it in `presence` for the bot seat (`{ bot: true, botLevel }`), and carries it into
+  rematches. The bot seat's display name is `Bot (Easy)`, `Bot (Medium)` or `Bot (Hard)`, and stats
+  record opponents under that name (key `bot (hard)` etc.), so each level has its own record.
+  Humans may not take any of those names (or `Bot`). Types: `BotDifficulty`, `parseBotLevel`,
+  `botOpponentName` in `protocol.ts`.
+- **Setup and Deploy are turn-based.** `pendingDecision` for setup names exactly one player; each
+  `setupPlace` action carries exactly one placement and is public at once (no hidden state; the view
+  only strips seed/RNG). After a human action the server keeps applying bot actions, including bot
+  setup placements, until the human has a decision or the game ends. Deploy moves one card.
+- **Bot deadline.** A bot run is bounded by a wall-clock budget (20 s, or Lambda time left minus 5 s)
+  and stops `BOT_STEP_MARGIN_MS` (500 ms) early, so one slow Hard decision (up to ~400 ms) cannot
+  push the invocation past the 29 s API Gateway / Lambda limit. The state reached so far is
+  broadcast and the bot stays to move; the client sends `continue` (or rejoins) and the next
+  invocation resumes the run.
 - `hello` is required before `create` and before a first `join`; a `join` that reclaims a seat
   with a valid `seatToken` works without it.
 - **Waiting lobby.** A human-vs-human match is created only when the second player joins (the
@@ -201,7 +228,7 @@ Server → client:
 - `npm test` runs vitest in all packages.
 - Engine: unit tests + independent spec tests (`test/spec`) covering every section and worked
   example of RULINGS.md.
-- `npm run sim -- --games N`: bot-vs-bot games with invariant checks after every action (card
+- `npm run sim -- --games N [--red L] [--black L]` (L = easy|medium|hard|random): bot-vs-bot games, per-level win rates and decision times, with invariant checks after every action (card
   conservation, no shared hexes, CP within bounds, caps respected, pending decision always
   actionable, every match terminates under a turn cap in simulation only).
 - Server: protocol tests with real ws clients against the local server, incl. a full bot game.

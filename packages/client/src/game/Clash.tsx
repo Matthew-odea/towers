@@ -131,7 +131,7 @@ export function WitDial({ value, onChange }: { value: number; onChange: (n: numb
   );
 }
 
-function OddsTip({ lines }: { lines: string[] | null }) {
+export function OddsTip({ lines }: { lines: string[] | null }) {
   if (!lines?.length) return null;
   return (
     <span className="odds-tip">
@@ -208,7 +208,17 @@ export interface ClashDiceProps {
   waiting: boolean;
 }
 
-function SourceMark({ view, player, source, commanderId }: { view: PlayerView; player: PlayerId; source: 'commander' | 'disadvantage'; commanderId: string | null }) {
+function SourceMark({
+  view,
+  player,
+  source,
+  commanderId,
+}: {
+  view: PlayerView;
+  player: PlayerId;
+  source: 'commander' | 'disadvantage';
+  commanderId: string | null;
+}) {
   const ch = source === 'commander' && commanderId ? view.cards[commanderId]?.character : undefined;
   return ch ? (
     <img className={`reroll-src reroll-src--${player}`} src={ART.portrait(ch)} alt="" />
@@ -254,8 +264,24 @@ export function ClashDice({ view, seat, clash, prompt, waiting }: ClashDiceProps
       <div className="dice-tray">
         {clash.dice ? (
           <>
-            <Die index={0} value={clash.dice[0]} throwKey={clash.dieKeys[0]} live={!!rr} onClick={() => rr?.onDie(0)} marker={dieMarker(0)} badge={pickedMark} />
-            <Die index={1} value={clash.dice[1]} throwKey={clash.dieKeys[1]} live={!!rr} onClick={() => rr?.onDie(1)} marker={dieMarker(1)} badge={pickedMark} />
+            <Die
+              index={0}
+              value={clash.dice[0]}
+              throwKey={clash.dieKeys[0]}
+              live={!!rr}
+              onClick={() => rr?.onDie(0)}
+              marker={dieMarker(0)}
+              badge={pickedMark}
+            />
+            <Die
+              index={1}
+              value={clash.dice[1]}
+              throwKey={clash.dieKeys[1]}
+              live={!!rr}
+              onClick={() => rr?.onDie(1)}
+              marker={dieMarker(1)}
+              badge={pickedMark}
+            />
           </>
         ) : (
           <>
@@ -274,40 +300,25 @@ export function ClashDice({ view, seat, clash, prompt, waiting }: ClashDiceProps
         )}
         {waiting && !rr && prompt?.kind !== 'press' && <span className="clash-wait" aria-label="Waiting for opponent" />}
       </div>
-      {rr && (
+      {rr && rr.options.length > 1 && (
         <div className="reroll-bar">
-          {rr.options.length > 1 && (
-            <div className="reroll-sources">
-              {rr.options.map((o, i) => (
-                <button
-                  key={i}
-                  type="button"
-                  className={`reroll-chip ${rr.source === i ? 'is-on' : ''}`}
-                  onClick={() => rr.onSource(i)}
-                  title={o.source === 'commander' ? 'Commander reroll' : 'Force a reroll (Disadvantage)'}
-                >
-                  {o.source === 'commander' && view.cards[o.commanderId]?.character ? (
-                    <img src={ART.portrait(view.cards[o.commanderId].character!)} alt="" />
-                  ) : (
-                    <MarkIcon kind="dis" />
-                  )}
-                </button>
-              ))}
-            </div>
-          )}
-          <button type="button" className="btn ghost" onClick={rr.onPass}>
-            Pass
-          </button>
-        </div>
-      )}
-      {prompt?.kind === 'press' && (
-        <div className="press-bar">
-          <button type="button" className="btn lit" onClick={prompt.onPress}>
-            Press
-          </button>
-          <button type="button" className="btn" onClick={prompt.onBreak}>
-            Break off
-          </button>
+          <div className="reroll-sources">
+            {rr.options.map((o, i) => (
+              <button
+                key={i}
+                type="button"
+                className={`reroll-chip ${rr.source === i ? 'is-on' : ''}`}
+                onClick={() => rr.onSource(i)}
+                title={o.source === 'commander' ? 'Commander reroll' : 'Force a reroll (Disadvantage)'}
+              >
+                {o.source === 'commander' && view.cards[o.commanderId]?.character ? (
+                  <img src={ART.portrait(view.cards[o.commanderId].character!)} alt="" />
+                ) : (
+                  <MarkIcon kind="dis" />
+                )}
+              </button>
+            ))}
+          </div>
         </div>
       )}
     </div>
@@ -358,9 +369,7 @@ export function Clash({ view, seat, clash, prompt, flare, dying, waiting, onHove
   const defender: PlayerId = attacker === 'red' ? 'black' : 'red';
 
   const picks = new Set(prompt && 'picks' in prompt ? prompt.picks : []);
-  const pickable = new Set(
-    prompt?.kind === 'commit' || prompt?.kind === 'defend' || prompt?.kind === 'casualties' ? prompt.eligible : [],
-  );
+  const pickable = new Set(prompt?.kind === 'commit' || prompt?.kind === 'defend' || prompt?.kind === 'casualties' ? prompt.eligible : []);
   const marksFor = (id: string): CardMark[] => {
     const m = baseMarks(id);
     if (pickable.has(id)) m.push(picks.has(id) ? 'selected' : 'selectable');
@@ -370,10 +379,26 @@ export function Clash({ view, seat, clash, prompt, flare, dying, waiting, onHove
   const onToggle = prompt && 'onToggle' in prompt ? prompt.onToggle : undefined;
   const clickFor = (ids: string[]) => (onToggle && ids.some((id) => pickable.has(id)) ? (id: string) => pickable.has(id) && onToggle(id) : undefined);
 
-  const witA = prompt?.kind === 'commit' ? (picks.has(atkIds.find((id) => view.cards[id].kind === 'wit') ?? '') ? prompt.wit : null) : clash?.attackerWit ?? null;
-  const witD = prompt?.kind === 'defend' ? (picks.has(defIds.find((id) => view.cards[id].kind === 'wit') ?? '') ? prompt.wit : null) : clash?.defenderWit ?? null;
+  const witA =
+    prompt?.kind === 'commit'
+      ? picks.has(atkIds.find((id) => view.cards[id].kind === 'wit') ?? '')
+        ? prompt.wit
+        : null
+      : (clash?.attackerWit ?? null);
+  const witD =
+    prompt?.kind === 'defend'
+      ? picks.has(defIds.find((id) => view.cards[id].kind === 'wit') ?? '')
+        ? prompt.wit
+        : null
+      : (clash?.defenderWit ?? null);
   const badgeFor = (side: 'attacker' | 'defender') => (id: string) =>
-    view.cards[id].kind === 'wit' ? (side === 'attacker' ? witA : witD) : (clash?.rangedArchers.includes(id) || (prompt?.kind === 'commit' && prompt.ranged.includes(id)) ? '↗' : null);
+    view.cards[id].kind === 'wit'
+      ? side === 'attacker'
+        ? witA
+        : witD
+      : clash?.rangedArchers.includes(id) || (prompt?.kind === 'commit' && prompt.ranged.includes(id))
+        ? '↗'
+        : null;
 
   const result = clash?.result ?? null;
   const rows = {
@@ -412,8 +437,7 @@ export function Clash({ view, seat, clash, prompt, flare, dying, waiting, onHove
   } as Record<PlayerId, ReactNode>;
 
   const confirmable = prompt?.kind === 'commit' || prompt?.kind === 'defend';
-  const witPicked =
-    (prompt?.kind === 'commit' && witA !== null) || (prompt?.kind === 'defend' && witD !== null);
+  const witPicked = (prompt?.kind === 'commit' && witA !== null) || (prompt?.kind === 'defend' && witD !== null);
 
   return (
     <div className={`clash ${clash?.ended ? 'clash--ended' : ''}`} onClick={(e) => e.stopPropagation()}>
@@ -423,44 +447,12 @@ export function Clash({ view, seat, clash, prompt, flare, dying, waiting, onHove
 
       {rows[seat]}
 
-      <div className="clash-controls">
-        {witPicked && confirmable && <WitDial value={prompt.wit} onChange={prompt.onWit} />}
-        {confirmable && (
-          <div className="clash-confirm">
-            {prompt.kind === 'commit' && (
-              <button type="button" className="btn ghost" onClick={prompt.onCancel}>
-                Cancel
-              </button>
-            )}
-            <span className="odds-wrap">
-              <button type="button" className="btn lit" disabled={!prompt.canConfirm} onClick={prompt.onConfirm}>
-                {prompt.kind === 'commit' ? 'Engage' : 'Defend'}
-                <span className="pick-count numeral">
-                  {prompt.picks.length}/{prompt.kind === 'commit' ? 3 : prompt.max}
-                </span>
-              </button>
-              <OddsTip lines={prompt.odds} />
-            </span>
-          </div>
-        )}
-        {prompt?.kind === 'casualties' && (
-          <div className="clash-confirm">
-            <span className="casualty-ask caps">
-              {prompt.owner === seat ? 'Lose' : 'Strike'} <b className="numeral">{prompt.count}</b>
-            </span>
-            <button type="button" className="btn lit" disabled={prompt.picks.length !== prompt.count} onClick={prompt.onConfirm}>
-              Confirm
-            </button>
-          </div>
-        )}
-        {prompt?.kind === 'retreat' && (
-          <div className="clash-confirm">
-            <button type="button" className="btn" onClick={prompt.onStay}>
-              Stand
-            </button>
-          </div>
-        )}
-      </div>
+      {/* Confirm / Pass / Press / Stay live in the primary button beside the CP spheres. */}
+      {witPicked && confirmable && (
+        <div className="clash-controls">
+          <WitDial value={prompt.wit} onChange={prompt.onWit} />
+        </div>
+      )}
     </div>
   );
 }

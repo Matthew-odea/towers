@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { WebSocketTransport, TransportError } from '../net/WebSocketTransport';
 import { LocalTransport } from '../net/LocalTransport';
 import type { GameConnection } from '../net/types';
-import { getName } from '../net/storage';
+import { getBotLevel, getName } from '../net/storage';
 import { gamePath, navigate } from './route';
 import { stashConnection, takeConnection } from './connections';
 import { NameGate } from './NameGate';
@@ -66,14 +66,15 @@ export function GameRoute({ gameId }: { gameId: string }) {
 
 export function OfflineRoute() {
   const name = getName() || 'You';
-  const [conn, setConn] = useState<GameConnection>(() => new LocalTransport({ name }));
+  const [level] = useState(getBotLevel);
+  const [conn, setConn] = useState<GameConnection>(() => new LocalTransport({ name, level }));
   useEffect(() => () => conn.close(), [conn]);
   return (
     <GameShell
       conn={conn}
       online={false}
       onLeave={() => navigate('#/')}
-      onRematch={() => setConn(new LocalTransport({ name }))}
+      onRematch={() => setConn(new LocalTransport({ name, level }))}
     />
   );
 }

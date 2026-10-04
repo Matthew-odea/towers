@@ -1,7 +1,7 @@
 // Shared helpers for the independent spec suite. Only uses the public API (src/index.ts).
 import { testing, pendingDecision, type Action, type GameEvent, type MatchState, type PlayerId } from '../../src/index';
 
-export const { buildState, mustApply, mustReject, applyAll, card, cards, forceDice, eventsOf } = testing;
+export const { buildState, mustApply, mustReject, applyAll, card, cards, forceDice, eventsOf, completeSetup } = testing;
 export { pendingDecision };
 export const c = (ref: string) => card(ref);
 export const cs = (...refs: string[]) => cards(...refs);
@@ -76,12 +76,14 @@ export const has = (arr: string[] | undefined, x: string) => (arr ?? []).include
 export const RED_TOWER = '-1,2';
 export const BLACK_TOWER = '1,-2';
 
-/** Legal minimal setup placement: both Commanders on the player's home edge. */
-export function placeCommanders(s: MatchState, p: PlayerId, extra: { cardId: string; hex: string }[] = []): Action {
+/** One setup placement (setup is open and turn-based: exactly one card per action). */
+export function place(p: PlayerId, ref: string, hex: string): Action {
+  return { type: 'setupPlace', player: p, placements: [{ cardId: c(ref), hex }] };
+}
+
+/** Both of a player's Commanders, one action each (on Tower then corner by default). */
+export function placeCommanders(s: MatchState, p: PlayerId): Action[] {
+  void s;
   const edge = p === 'red' ? ['-1,2', '-2,2'] : ['1,-2', '0,-2'];
-  return {
-    type: 'setupPlace',
-    player: p,
-    placements: [{ cardId: c(`${p}:K1`), hex: edge[0] }, { cardId: c(`${p}:K2`), hex: edge[1] }, ...extra],
-  };
+  return [place(p, `${p}:K1`, edge[0]), place(p, `${p}:K2`, edge[1])];
 }

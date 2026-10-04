@@ -1,6 +1,18 @@
 // Wire protocol shared by server and client. Type-only plus tiny pure helpers; no Node imports.
 import type { Action, GameEvent, PlayerId, PlayerView } from '@towers/engine';
 
+/** Bot difficulty for vs-bot games (default 'medium'). */
+export type BotDifficulty = 'easy' | 'medium' | 'hard';
+export const BOT_DIFFICULTIES: readonly BotDifficulty[] = ['easy', 'medium', 'hard'];
+export const DEFAULT_BOT_LEVEL: BotDifficulty = 'medium';
+export function parseBotLevel(v: unknown): BotDifficulty | null {
+  return typeof v === 'string' && (BOT_DIFFICULTIES as readonly string[]).includes(v) ? (v as BotDifficulty) : null;
+}
+/** Opponent name recorded in stats for a bot game, e.g. "Bot (Hard)". */
+export function botOpponentName(level: BotDifficulty): string {
+  return `Bot (${level[0]!.toUpperCase()}${level.slice(1)})`;
+}
+
 export const MAX_MESSAGE_BYTES = 16 * 1024;
 export const MAX_CHAT_CHARS = 300;
 export const MAX_CHAT_KEPT = 50;
@@ -9,7 +21,7 @@ export const GAME_TTL_DAYS = 14;
 
 export type ClientMessage =
   | { t: 'hello'; username: string }
-  | { t: 'create'; vsBot: boolean }
+  | { t: 'create'; vsBot: boolean; botLevel?: BotDifficulty }
   | { t: 'join'; gameId: string; seatToken?: string }
   | { t: 'action'; gameId: string; seatToken: string; action: Action; expectedVersion: number }
   | { t: 'chat'; gameId: string; seatToken: string; text: string }
@@ -28,6 +40,8 @@ export interface PresenceEntry {
   name: string | null;
   connected: boolean;
   bot: boolean;
+  /** Present for the bot seat. */
+  botLevel?: BotDifficulty;
 }
 export type Presence = Record<PlayerId, PresenceEntry>;
 
@@ -43,7 +57,7 @@ export interface PlayerStats {
   matchesWon: number;
   roundsWon: number;
   roundsLost: number;
-  /** Keyed by lower-cased opponent name; the bot is recorded as "Bot". */
+  /** Keyed by lower-cased opponent name; bot games are recorded per level as "Bot (Easy)", "Bot (Medium)" or "Bot (Hard)". */
   opponents: Record<string, OpponentRecord>;
   /** Times each named character was committed to an engagement. Keyed by character id. */
   characters: Record<string, number>;

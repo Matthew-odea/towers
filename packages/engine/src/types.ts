@@ -28,10 +28,16 @@ export interface Placement {
   hex: HexKey;
 }
 
+/** Setup steps (RULINGS §4): both Commanders first (round starter, then the other player), then troops. */
+export type SetupStep = 'commander' | 'troop';
+
 export interface SetupStatus {
-  submitted: boolean;
-  /** The submitted placement. In a PlayerView the opponent's placement is always null during setup. */
-  placements: Placement[] | null;
+  /**
+   * Cards this player has placed during the current round's setup, in placement order
+   * (Commanders first). Public: setup is open. Empty outside setup until the next round's setup
+   * begins, and kept as-is during play for reference.
+   */
+  placements: Placement[];
 }
 
 export interface RoundResult {
@@ -184,9 +190,11 @@ export interface PlayerView extends PublicState {
 export type AnyState = MatchState | PlayerView;
 
 export type Action =
+  /** Exactly one placement per action (setup is turn-based, RULINGS §4). */
   | { type: 'setupPlace'; player: PlayerId; placements: Placement[] }
   | { type: 'move'; player: PlayerId; cardIds: string[]; from: HexKey; path: HexKey[] }
   | { type: 'withdraw'; player: PlayerId; cardIds: string[]; from: HexKey; to: HexKey | 'reserve' }
+  /** Exactly one card id (RULINGS §10.4). */
   | { type: 'deploy'; player: PlayerId; cardIds: string[] }
   | { type: 'fortify'; player: PlayerId; hex: HexKey }
   | { type: 'reinforce'; player: PlayerId; cardId: string; hex: HexKey }
@@ -209,7 +217,24 @@ export type ApplyResult = { ok: true; state: MatchState; events: GameEvent[] } |
 export type RerollOption = { source: 'commander'; commanderId: string } | { source: 'disadvantage' };
 
 export type PendingDecision =
-  | { kind: 'setup'; players: PlayerId[] }
+  | {
+      kind: 'setup';
+      /** Exactly one player places per setup turn. */
+      players: [PlayerId];
+      player: PlayerId;
+      /** 'commander' while `player` still has Commanders to place, then 'troop'. */
+      step: SetupStep;
+      /** Cards `player` may place now: their unplaced Commanders, or (troop step) every available non-Commander, non-Wit card. */
+      eligible: string[];
+      /** Hexes `player` may place on (their home edge). */
+      hexes: HexKey[];
+      /** Cards placed so far this setup (Commanders + troops), per player. */
+      placed: Record<PlayerId, number>;
+      /** Commanders still to place, per player. */
+      commandersLeft: Record<PlayerId, number>;
+      /** Troop placements still to come, per player: min(6 - troops placed, eligible cards left). */
+      troopsLeft: Record<PlayerId, number>;
+    }
   | {
       kind: 'turn';
       players: [PlayerId];
@@ -245,8 +270,10 @@ export type PendingDecision =
 
 export type GameEvent =
   | { type: 'roundStarted'; round: number; firstPlayer: PlayerId; terrain: Record<HexKey, Terrain> }
-  | { type: 'setupSubmitted'; player: PlayerId }
-  | { type: 'setupRevealed'; placements: Record<PlayerId, Placement[]> }
+  /** One setup placement (setup is open, so the card and hex are public). */
+  | { type: 'setupPlaced'; player: PlayerId; cardId: string; hex: HexKey; step: SetupStep }
+  /** Setup finished; play starts (a `turnStarted` for the round starter follows). */
+  | { type: 'setupComplete'; placements: Record<PlayerId, Placement[]> }
   | { type: 'turnStarted'; player: PlayerId; turn: number; cp: number }
   /** `auto`: the engine ended the turn because the player had 0 CP left and nothing in progress. */
   | { type: 'turnEnded'; player: PlayerId; auto?: boolean }

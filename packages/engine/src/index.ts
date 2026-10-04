@@ -4,7 +4,8 @@ export const ENGINE_VERSION = '1.0.0';
 export * from './types';
 export { createMatch, type CreateMatchOptions } from './lifecycle';
 export { applyAction, validateAction, isLegal, viewFor, pendingDecision, actingPlayers, mustAct } from './core';
-export { chooseBotAction, type BotOptions, type BotLevel } from './bot/index';
+export { chooseBotAction, BOT_LEVELS, normalizeBotLevel, type BotOptions, type BotLevel } from './bot/index';
+export { nextSetupPlacer, setupCounts, setupEligible, type SetupCounts } from './setup';
 export { chooseRandomAction } from './bot/random';
 
 // Board geometry

@@ -1,6 +1,7 @@
 // Random-legal bot: picks a uniformly-ish random legal action for whatever `player` must decide.
 import { HOME_EDGE } from '../hex';
 import { pendingDecision, validateAction } from '../core';
+import { setupEligible } from '../setup';
 import { hexesOf, stackAt } from '../state';
 import {
   eligibleAttackers,
@@ -38,17 +39,11 @@ function randomSubset<T>(xs: readonly T[], rand: Rand): T[] {
   return sample(xs, randInt(1, xs.length, rand), rand);
 }
 
-export function randomSetup(s: AnyState, player: PlayerId, rand: Rand): Action {
-  const avail = s.reserve[player];
-  const edge = HOME_EDGE[player];
-  const placements = avail
-    .filter((id) => s.cards[id].kind === 'commander')
-    .map((cardId) => ({ cardId, hex: pick(edge, rand) }));
-  const others = avail.filter((id) => s.cards[id].kind !== 'commander' && s.cards[id].kind !== 'wit');
-  for (const cardId of sample(others, randInt(0, Math.min(6, others.length), rand), rand)) {
-    placements.push({ cardId, hex: pick(edge, rand) });
-  }
-  return { type: 'setupPlace', player, placements };
+/** One random setup placement: a random eligible card on a random home-edge hex. */
+export function randomSetup(s: AnyState, player: PlayerId, rand: Rand): Action | null {
+  const eligible = setupEligible(s, player);
+  if (eligible.length === 0) return null;
+  return { type: 'setupPlace', player, placements: [{ cardId: pick(eligible, rand), hex: pick(HOME_EDGE[player], rand) }] };
 }
 
 function turnCandidates(s: AnyState, player: PlayerId, rand: Rand): Action[] {
@@ -71,7 +66,7 @@ function turnCandidates(s: AnyState, player: PlayerId, rand: Rand): Action[] {
   }
   const deployable = reserveDeployable(s, player);
   if (deployable.length > 0) {
-    out.push({ type: 'deploy', player, cardIds: sample(deployable, randInt(1, Math.min(3, deployable.length), rand), rand) });
+    out.push({ type: 'deploy', player, cardIds: [pick(deployable, rand)] });
   }
   for (const hex of fortifiableHexes(s, player)) out.push({ type: 'fortify', player, hex });
   if (deployable.length > 0) {

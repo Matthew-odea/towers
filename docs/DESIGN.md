@@ -29,15 +29,22 @@ probably on a voice call.
 ### Landing
 - One input (your name, remembered in localStorage) and three actions: **New game** (creates a
   game and shows the link to copy), **Play the bot**, and a small **Stats** link.
+- **Bot difficulty**: clicking Play the bot turns that button into three joined buttons, **Easy /
+  Medium / Hard**; clicking one starts the game. The last choice is lit and remembered
+  (`towers.botLevel`, default Medium). Rematch keeps the level. In game the opponent reads
+  "Bot · Hard" (the level small and quiet beside the name).
 - The title "Towers" may appear once. Nothing else.
 
 ### Waiting for opponent
 - The link, a copy button, the board terrain preview. That's it.
 
 ### Setup
-- Your army laid out along the bottom; drag (or click-select then click hex) onto your 3
-  home-edge hexes. Commanders must be placed; up to 6 others. A single confirm button that
-  only lights (Stormlight) once the placement is legal. Opponent's side shows only "ready".
+- Open and turn-based (RULINGS §4): one card per setup turn, placed at once, no confirm.
+- On your setup turn the cards you may place rise slightly and glow in your hand; pick one, then
+  click one of your 3 home-edge hexes (they glow once a card is picked). Commanders first
+  ("Place a Commander (1 of 2)"), then troops ("Place a card · 3 of 6").
+- The opponent's placements land on the board as they happen. While they place, your hand
+  sits back (desaturated) and the status line says what they are placing.
 
 ### Game screen
 - **Board** centre and large (Catan-shaped hex island floating in a storm-dark field).
@@ -53,23 +60,39 @@ probably on a voice call.
   destination is closer to your Tower and Move is capped, or explicitly via a modifier/context
   option; Withdraw-to-Reserve is a drop target on your Reserve when the stack is on your Tower).
   Enemy hexes you can attack glow differently; clicking one enters engagement setup.
-  Fortify / Deploy / Reinforce / Spawn Wit / End turn are compact controls near the CP spheres,
-  shown only when legal.
+  Deploy: pick one Reserve card (the deployable ones glow), then click your Tower (1 CP).
+- **Status line**: one compact line in a fixed place, centred just above your hand, in plain
+  words: whose move it is and what is asked ("Your turn · 3 CP", "Singers' turn",
+  "Defend · commit up to 3", "Reroll a die or pass", "Press or break off",
+  "Choose 1 casualty", "Retreat or stay", "Waiting for Singers…"). A small diamond in the
+  acting side's colour leads it. It never grows into a banner or a paragraph.
+- **Active side**: the side that must act has its board edge lit in its colour, its name at full
+  strength and (on its turn) its CP spheres lit; the other side's name dims, and your hand dims
+  whenever it is not your move.
+- **Primary action**: one button, always in the same place (bottom right, beside the CP
+  spheres), named for the current main action: "End turn" on your free turn, "Engage" while
+  committing attackers, "Defend", "Pass" in the reroll window, "Press" after a stale roll,
+  "Confirm" for casualties, "Stay" for retreat. It is Stormlight-lit when it is the expected next
+  step, flat and disabled until its choice is complete (e.g. "Defend 0/3"), and absent when it is
+  not your move (and during setup, where placing is the action).
+- **Secondary controls** (Withdraw, Fortify, Deploy, Reinforce, Spawn Wit, Break off, Cancel) are
+  small buttons just above the primary one, shown only when legal.
 - **Engagement**: the two committed groups slide toward the contested edge; eligible cards to
   commit glow; Wit asks for its number with a compact 2–12 dial. Show the side's Advantage /
   Disadvantage as a single small mark each (hover explains the source). Optional subtle
   activation-odds hint on hover only.
   Dice roll → activating cards flare → rerolls offered by making the dice themselves clickable
   (with a small source marker: Commander portrait or Disadvantage) → result plays out:
-  destroyed cards shatter/fade, retreats slide. Press / Break Off as two buttons on the dice.
-  Casualty choice: eligible cards glow, pick N, confirm.
+  destroyed cards shatter/fade, retreats slide. Confirming a commitment, Pass, Press / Break off
+  and casualty Confirm all use the primary action button and its secondary row; the dice carry
+  only the rerolls. Casualty choice: eligible cards glow, pick N, Confirm.
 - **Round over / match over**: one large line ("Kholin take the round") over the board, round
   pips, continue. Match over shows winner + a rematch button.
 - **Log**: collapsed by default; a small toggle opens a narrow drawer with the event history.
 - **Chat**: small toggle bottom-left; unread dot; Enter to send. No avatars.
 - **Concede**: tucked in a small menu, with confirm.
-- Whose turn it is: shown by the light on your CP spheres and a subtle board-edge glow on the
-  active side, not by a banner.
+- Whose turn it is: the status line plus the lit board edge and spheres of the active side (see
+  above). No banners or pop-ups for it.
 
 ### Stats
 - A single quiet page: your record, per-opponent rows, most-committed characters as small

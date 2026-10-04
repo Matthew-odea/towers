@@ -1,7 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent, type MouseEvent, type ReactNode } from 'react';
 import {
-  HOME_EDGE,
-  MAX_SETUP_OTHERS,
   TOWER,
   activationProbability,
   deployInfo,
@@ -17,22 +15,25 @@ import {
   previewModifiers,
   reinforceTargets,
   reserveDeployable,
+  setupCounts,
   validateAction,
   withdrawOptions,
   type Action,
+  type CpActionType,
   type HexKey,
   type PendingDecision,
   type PlayerId,
   type PlayerView,
 } from '@towers/engine';
-import type { GameConnection } from '../net/types';
+import type { GameConnection, Presence } from '../net/types';
 import { Board, type HexMark } from './Board';
 import type { CardMark } from './Card';
-import { Clash, ClashDice, type ClashPrompt } from './Clash';
+import { Clash, ClashDice, OddsTip, type ClashPrompt } from './Clash';
 import { FACTION } from './cardInfo';
 import { BackRow, BannerView, Inspector, LogDrawer, PILE_W, Pile, ReserveFan, RoundPips, Spheres, type Inspect } from './Hud';
 import { ROUND_BANNER_MS } from './display';
 import { capHint } from './hints';
+import { statusFor, type TurnStep } from './status';
 import { TerrainLayer } from './Terrain';
 import { useFeed } from './useFeed';
 import './game.css';
@@ -50,6 +51,33 @@ const IDLE: Mode = { kind: 'idle' };
 
 function pct(x: number): string {
   return `${Math.round(x * 100)}%`;
+}
+
+const LEVEL_NAMES: Record<string, string> = {
+  easy: 'Easy',
+  medium: 'Medium',
+  hard: 'Hard',
+};
+
+/** The bot's difficulty, from presence or (older servers) a name like "Bot (Hard)". */
+function botLevelLabel(p: Presence | null, side: PlayerId, name: string): string | null {
+  const entry = p?.[side];
+  if (!entry?.bot) return null;
+  if (entry.botLevel) return LEVEL_NAMES[entry.botLevel] ?? null;
+  const m = /\((Easy|Medium|Hard)\)\s*$/.exec(name);
+  return m ? m[1] : null;
+}
+
+interface Primary {
+  /** Stable id for tests: endTurn | engage | defend | pass | press | confirm | stay. */
+  kind: string;
+  label: string;
+  count?: string;
+  /** Stormlight: this is the expected next step. */
+  lit: boolean;
+  enabled: boolean;
+  onClick: () => void;
+  odds?: string[] | null;
 }
 
 function toggle(list: string[], id: string, max: number): string[] {
@@ -82,8 +110,8 @@ function Screen({ conn, onRematch }: { conn: GameConnection; onRematch?: () => v
   const [picks, setPicks] = useState<string[]>([]);
   const [wit, setWit] = useState(7);
   const [rerollSrc, setRerollSrc] = useState(0);
-  const [placements, setPlacements] = useState<Record<string, HexKey>>({});
-  const [setupSel, setSetupSel] = useState<string[]>([]);
+  const [setupPick, setSetupPick] = useState<string | null>(null);
+  const [presence, setPresence] = useState<Presence | null>(() => conn.getPresence());
   const [hoverCard, setHoverCard] = useState<string | null>(null);
   const [hoverHex, setHoverHex] = useState<HexKey | null>(null);
   const [hoverGroup, setHoverGroup] = useState<Inspect>(null);
@@ -92,6 +120,11 @@ function Screen({ conn, onRematch }: { conn: GameConnection; onRematch?: () => v
   const [error, setError] = useState<string | null>(null);
   const [awaiting, setAwaiting] = useState<number | null>(null);
   const pendingSelect = useRef<{ hex: HexKey; cardIds: string[] } | null>(null);
+
+  useEffect(() => {
+    setPresence(conn.getPresence());
+    return conn.subscribe({ onPresence: setPresence });
+  }, [conn]);
 
   // ---- connection errors ----
   useEffect(
@@ -116,12 +149,18 @@ function Screen({ conn, onRematch }: { conn: GameConnection; onRematch?: () => v
     setPicks([]);
     setRerollSrc(0);
     setCostPreview(0);
+    setSetupPick(null);
     const ps = pendingSelect.current;
     pendingSelect.current = null;
     if (ps && live && live.turn?.player === seat && !live.engagement && live.turn.cp > 0) {
       const st = live.stacks[ps.hex] ?? [];
       if (ps.cardIds.every((id) => st.includes(id))) {
-        setMode({ kind: 'select', hex: ps.hex, cardIds: ps.cardIds, withdraw: false });
+        setMode({
+          kind: 'select',
+          hex: ps.hex,
+          cardIds: ps.cardIds,
+          withdraw: false,
+        });
         return;
       }
     }
@@ -138,19 +177,10 @@ function Screen({ conn, onRematch }: { conn: GameConnection; onRematch?: () => v
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [seq]);
 
-  // Setup defaults: Commanders on the Tower.
-  const setupKey = live ? `${live.round}:${live.phase}` : '';
-  useEffect(() => {
-    if (!live || live.phase !== 'setup') return;
-    const p: Record<string, HexKey> = {};
-    for (const id of live.reserve[seat]) if (live.cards[id].kind === 'commander') p[id] = TOWER[seat];
-    setPlacements(p);
-    setSetupSel([]);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [setupKey]);
-
   const canAct = !!live && !!pd && !feed.busy && awaiting !== seq && (pd.players as PlayerId[]).includes(seat);
   const turnPd = canAct && pd?.kind === 'turn' ? pd : null;
+  /** My setup turn: place one eligible card on a home-edge hex. */
+  const mySetup = canAct && pd?.kind === 'setup' && pd.player === seat ? pd : null;
 
   const send = useCallback(
     (a: Action) => {
@@ -176,18 +206,14 @@ function Screen({ conn, onRematch }: { conn: GameConnection; onRematch?: () => v
       fortify: fortifiableHexes(live, seat),
       deploy: deployInfo(live, seat),
       spawn: legalSpawnHexes(live, seat),
-      reinforce:
-        turnPd.capRemaining.reinforce >= 3 && reserveDeployable(live, seat).length > 0 ? reinforceTargets(live, seat) : [],
+      reinforce: turnPd.capRemaining.reinforce >= 3 && reserveDeployable(live, seat).length > 0 ? reinforceTargets(live, seat) : [],
       moves: sel ? moveOptions(live, seat, sel.cardIds, sel.hex) : [],
       withdraws: sel ? withdrawOptions(live, seat, sel.cardIds, sel.hex) : [],
     };
   }, [live, turnPd, mode, seat]);
 
   const engageMode = mode.kind === 'engage' && turnPd ? mode : null;
-  const attackers = useMemo(
-    () => (live && engageMode ? eligibleAttackers(live, seat, engageMode.target) : []),
-    [live, engageMode, seat],
-  );
+  const attackers = useMemo(() => (live && engageMode ? eligibleAttackers(live, seat, engageMode.target) : []), [live, engageMode, seat]);
 
   if (!live || !d || !pd)
     return (
@@ -201,30 +227,9 @@ function Screen({ conn, onRematch }: { conn: GameConnection; onRematch?: () => v
     );
 
   const view = d.view;
-  const setupPhase = live.phase === 'setup' && view.phase === 'setup';
-  const submitted = live.setup[seat].submitted;
+  const setupPhase = live.phase === 'setup' || view.phase === 'setup';
   const myStackAt = (h: HexKey) => (live.stacks[h] && live.cards[live.stacks[h][0]].owner === seat ? live.stacks[h] : null);
-  const enemyAt = (h: HexKey) => !!live.stacks[h] && live.cards[live.stacks[h][0]].owner === opp;
-
-  // ---- setup board ----
-  let boardView: PlayerView = view;
-  let setupReserve: string[] = [];
-  if (setupPhase) {
-    const mine = submitted
-      ? Object.fromEntries((live.setup[seat].placements ?? []).map((p) => [p.cardId, p.hex]))
-      : placements;
-    const stacks: Record<HexKey, string[]> = {};
-    for (const [id, h] of Object.entries(mine)) (stacks[h] ??= []).push(id);
-    boardView = { ...view, stacks };
-    setupReserve = live.reserve[seat].filter((id) => !mine[id]);
-  }
-  const setupOthers = Object.keys(placements).filter((id) => live.cards[id].kind !== 'commander').length;
-  const setupAction: Action = {
-    type: 'setupPlace',
-    player: seat,
-    placements: Object.entries(placements).map(([cardId, hex]) => ({ cardId, hex })),
-  };
-  const setupLegal = setupPhase && !submitted && validateAction(live, setupAction) === null;
+  const boardView: PlayerView = view;
 
   // ---- engagement prompts ----
   const e = live.engagement;
@@ -233,10 +238,23 @@ function Screen({ conn, onRematch }: { conn: GameConnection; onRematch?: () => v
     const target = engageMode.target;
     const eligible = attackers.map((a) => a.cardId);
     const hasWit = picks.some((id) => live.cards[id].kind === 'wit');
-    const action: Action = { type: 'engage', player: seat, target, cardIds: picks, witNumber: hasWit ? wit : undefined };
-    const mods = previewModifiers(live, { player: seat, target, attackerCardIds: picks });
+    const action: Action = {
+      type: 'engage',
+      player: seat,
+      target,
+      cardIds: picks,
+      witNumber: hasWit ? wit : undefined,
+    };
+    const mods = previewModifiers(live, {
+      player: seat,
+      target,
+      attackerCardIds: picks,
+    });
     const fire = picks.length
-      ? activationProbability(live, picks, { witNumber: hasWit ? wit : null, advantage: mods.attacker.advantage.length > 0 })
+      ? activationProbability(live, picks, {
+          witNumber: hasWit ? wit : null,
+          advantage: mods.attacker.advantage.length > 0,
+        })
       : null;
     prompt = {
       kind: 'commit',
@@ -255,8 +273,18 @@ function Screen({ conn, onRematch }: { conn: GameConnection; onRematch?: () => v
     };
   } else if (canAct && e && pd.kind === 'defend') {
     const hasWit = picks.some((id) => live.cards[id].kind === 'wit');
-    const action: Action = { type: 'defend', player: seat, cardIds: picks, witNumber: hasWit ? wit : undefined };
-    const mods = previewModifiers(live, { player: e.attacker, target: e.target, attackerCardIds: e.attackerCards, defenderCardIds: picks });
+    const action: Action = {
+      type: 'defend',
+      player: seat,
+      cardIds: picks,
+      witNumber: hasWit ? wit : undefined,
+    };
+    const mods = previewModifiers(live, {
+      player: e.attacker,
+      target: e.target,
+      attackerCardIds: e.attackerCards,
+      defenderCardIds: picks,
+    });
     const odds = picks.length
       ? engagementOdds(live, {
           player: e.attacker,
@@ -293,12 +321,22 @@ function Screen({ conn, onRematch }: { conn: GameConnection; onRematch?: () => v
       onSource: setRerollSrc,
       onDie: (die) => {
         const o = opts[src];
-        send({ type: 'reroll', player: seat, source: o.source, die, commanderId: o.source === 'commander' ? o.commanderId : undefined });
+        send({
+          type: 'reroll',
+          player: seat,
+          source: o.source,
+          die,
+          commanderId: o.source === 'commander' ? o.commanderId : undefined,
+        });
       },
       onPass: () => send({ type: 'passReroll', player: seat }),
     };
   } else if (canAct && pd.kind === 'pressOrBreak') {
-    prompt = { kind: 'press', onPress: () => send({ type: 'press', player: seat }), onBreak: () => send({ type: 'breakOff', player: seat }) };
+    prompt = {
+      kind: 'press',
+      onPress: () => send({ type: 'press', player: seat }),
+      onBreak: () => send({ type: 'breakOff', player: seat }),
+    };
   } else if (canAct && pd.kind === 'casualties') {
     prompt = {
       kind: 'casualties',
@@ -310,7 +348,10 @@ function Screen({ conn, onRematch }: { conn: GameConnection; onRematch?: () => v
       onConfirm: () => send({ type: 'chooseCasualties', player: seat, cardIds: picks }),
     };
   } else if (canAct && pd.kind === 'retreat') {
-    prompt = { kind: 'retreat', onStay: () => send({ type: 'retreat', player: seat, to: null }) };
+    prompt = {
+      kind: 'retreat',
+      onStay: () => send({ type: 'retreat', player: seat, to: null }),
+    };
   }
   const oppDeciding = !feed.busy && !!e && pd.players.length > 0 && !(pd.players as PlayerId[]).includes(seat);
 
@@ -326,11 +367,9 @@ function Screen({ conn, onRematch }: { conn: GameConnection; onRematch?: () => v
   const withdrawTo = new Set((q?.withdraws ?? []).filter((x): x is HexKey => x !== 'reserve'));
   const reserveDrop = !!sel && (q?.withdraws ?? []).includes('reserve');
 
-  if (setupPhase && !submitted) {
-    if (setupSel.length) for (const h of HOME_EDGE[seat]) hexMarks[h] = 'setup';
-    // First look at setup: the three home hexes breathe once so a new player knows where cards go.
-    else if (setupOthers === 0) for (const h of HOME_EDGE[seat]) hexMarks[h] = 'hint';
-    for (const id of setupSel) addMark(id, 'selected');
+  if (setupPhase) {
+    // My setup turn: once a card is picked the home hexes glow; before that they breathe softly.
+    if (mySetup) for (const h of mySetup.hexes) hexMarks[h] = setupPick ? 'setup' : 'hint';
   } else if (turnPd && q) {
     if (mode.kind === 'idle') {
       if (turnPd.cp > 0) for (const h of Object.keys(live.stacks)) if (myStackAt(h)) hexMarks[h] = 'own';
@@ -359,12 +398,26 @@ function Screen({ conn, onRematch }: { conn: GameConnection; onRematch?: () => v
     } else if (mode.kind === 'fortify') {
       for (const h of q.fortify) {
         hexMarks[h] = 'fortify';
-        hexBadges[h] = <span className="cost-pips">{Array.from({ length: fortifyCost(live, h) }, (_, i) => <i key={i} />)}</span>;
+        hexBadges[h] = (
+          <span className="cost-pips">
+            {Array.from({ length: fortifyCost(live, h) }, (_, i) => (
+              <i key={i} />
+            ))}
+          </span>
+        );
       }
     } else if (mode.kind === 'reinforce') {
       if (picks[0])
         for (const h of q.reinforce)
-          if (validateAction(live, { type: 'reinforce', player: seat, cardId: picks[0], hex: h }) === null) hexMarks[h] = 'reinforce';
+          if (
+            validateAction(live, {
+              type: 'reinforce',
+              player: seat,
+              cardId: picks[0],
+              hex: h,
+            }) === null
+          )
+            hexMarks[h] = 'reinforce';
     } else if (mode.kind === 'spawn') {
       for (const h of q.spawn) hexMarks[h] = 'spawn';
     }
@@ -378,14 +431,12 @@ function Screen({ conn, onRematch }: { conn: GameConnection; onRematch?: () => v
   // ---- click handling ----
   const onHexClick = (h: HexKey, ev: MouseEvent) => {
     if (setupPhase) {
-      if (submitted) return;
-      if (setupSel.length && HOME_EDGE[seat].includes(h)) {
-        setPlacements((p) => {
-          const n = { ...p };
-          for (const id of setupSel) n[id] = h;
-          return n;
+      if (mySetup && setupPick && mySetup.hexes.includes(h)) {
+        send({
+          type: 'setupPlace',
+          player: seat,
+          placements: [{ cardId: setupPick, hex: h }],
         });
-        setSetupSel([]);
       }
       return;
     }
@@ -410,7 +461,7 @@ function Screen({ conn, onRematch }: { conn: GameConnection; onRematch?: () => v
         else setMode(IDLE);
         return;
       case 'deploy':
-        if (h === TOWER[seat] && picks.length) send({ type: 'deploy', player: seat, cardIds: picks });
+        if (h === TOWER[seat] && picks.length) send({ type: 'deploy', player: seat, cardIds: [picks[0]] });
         else setMode(IDLE);
         return;
       case 'engage':
@@ -418,22 +469,45 @@ function Screen({ conn, onRematch }: { conn: GameConnection; onRematch?: () => v
           setMode({ kind: 'engage', target: h });
           setPicks([]);
         } else if (myStackAt(h)) {
-          setMode({ kind: 'select', hex: h, cardIds: [...myStackAt(h)!], withdraw: false });
+          setMode({
+            kind: 'select',
+            hex: h,
+            cardIds: [...myStackAt(h)!],
+            withdraw: false,
+          });
         }
         return;
       case 'select': {
         const wantWithdraw = mode.withdraw || ev.shiftKey || ev.altKey;
         if (wantWithdraw && withdrawTo.has(h)) {
-          send({ type: 'withdraw', player: seat, cardIds: mode.cardIds, from: mode.hex, to: h });
+          send({
+            type: 'withdraw',
+            player: seat,
+            cardIds: mode.cardIds,
+            from: mode.hex,
+            to: h,
+          });
           return;
         }
         if (!mode.withdraw && moveTo.has(h)) {
           pendingSelect.current = { hex: h, cardIds: mode.cardIds };
-          send({ type: 'move', player: seat, cardIds: mode.cardIds, from: mode.hex, path: moveTo.get(h)! });
+          send({
+            type: 'move',
+            player: seat,
+            cardIds: mode.cardIds,
+            from: mode.hex,
+            path: moveTo.get(h)!,
+          });
           return;
         }
         if (withdrawTo.has(h)) {
-          send({ type: 'withdraw', player: seat, cardIds: mode.cardIds, from: mode.hex, to: h });
+          send({
+            type: 'withdraw',
+            player: seat,
+            cardIds: mode.cardIds,
+            from: mode.hex,
+            to: h,
+          });
           return;
         }
         if (q.engage.includes(h)) {
@@ -447,14 +521,26 @@ function Screen({ conn, onRematch }: { conn: GameConnection; onRematch?: () => v
           if (h === mode.hex) {
             if (mode.cardIds.length === all.length) setMode(IDLE);
             else setMode({ ...mode, cardIds: [...all] });
-          } else setMode({ kind: 'select', hex: h, cardIds: [...all], withdraw: false });
+          } else
+            setMode({
+              kind: 'select',
+              hex: h,
+              cardIds: [...all],
+              withdraw: false,
+            });
           return;
         }
         setMode(IDLE);
         return;
       }
       case 'idle':
-        if (myStackAt(h) && turnPd.cp > 0) setMode({ kind: 'select', hex: h, cardIds: [...myStackAt(h)!], withdraw: false });
+        if (myStackAt(h) && turnPd.cp > 0)
+          setMode({
+            kind: 'select',
+            hex: h,
+            cardIds: [...myStackAt(h)!],
+            withdraw: false,
+          });
         else if (q.engage.includes(h)) {
           setMode({ kind: 'engage', target: h });
           setPicks([]);
@@ -465,16 +551,8 @@ function Screen({ conn, onRematch }: { conn: GameConnection; onRematch?: () => v
 
   const onCardClick = (id: string, h: HexKey, ev: MouseEvent) => {
     if (setupPhase) {
-      if (!submitted && placements[id] && live.cards[id].kind !== 'commander') {
-        setPlacements((p) => {
-          const n = { ...p };
-          delete n[id];
-          return n;
-        });
-      } else if (!submitted && placements[id]) {
-        // Commanders cannot leave the home edge: pick one up to move it.
-        setSetupSel([id]);
-      }
+      // Placed cards are final; clicking one is clicking its hex (to stack another card there).
+      onHexClick(h, ev);
       return;
     }
     if (canAct && (pd.kind === 'defend' || pd.kind === 'casualties')) {
@@ -502,14 +580,14 @@ function Screen({ conn, onRematch }: { conn: GameConnection; onRematch?: () => v
 
   const onReserveClick = (id: string) => {
     if (setupPhase) {
-      if (submitted || live.cards[id].kind === 'wit') return;
-      setSetupSel((s) => (s.includes(id) ? s.filter((x) => x !== id) : [...s, id]));
+      if (mySetup?.eligible.includes(id)) setSetupPick((cur) => (cur === id ? null : id));
       return;
     }
     if (!turnPd || !q) return;
     const kind = live.cards[id].kind;
     if (mode.kind === 'deploy') {
-      if (q.deploy.cards.includes(id)) setPicks((p) => toggle(p, id, q.deploy.max));
+      // Deploy is one card (RULINGS §10.4): picking another replaces the pick.
+      if (q.deploy.cards.includes(id)) setPicks((p) => (p[0] === id ? [] : [id]));
       return;
     }
     if (mode.kind === 'reinforce') {
@@ -527,12 +605,12 @@ function Screen({ conn, onRematch }: { conn: GameConnection; onRematch?: () => v
   };
 
   // Reserve marks
-  const reserveIds = setupPhase ? setupReserve : view.reserve[seat];
+  const reserveIds = view.reserve[seat];
   const reserveMarks = (id: string): CardMark[] => {
     const kind = live.cards[id].kind;
     if (setupPhase) {
-      if (submitted) return ['dim'];
-      return setupSel.includes(id) ? ['selected'] : [];
+      if (!mySetup || !mySetup.eligible.includes(id)) return ['dim'];
+      return [setupPick === id ? 'selected' : 'selectable'];
     }
     if (!turnPd || !q) return [];
     if (mode.kind === 'deploy') return q.deploy.cards.includes(id) ? [picks.includes(id) ? 'selected' : 'selectable'] : ['dim'];
@@ -540,19 +618,6 @@ function Screen({ conn, onRematch }: { conn: GameConnection; onRematch?: () => v
     if (mode.kind === 'spawn') return kind === 'wit' ? ['selected'] : ['dim'];
     if (mode.kind === 'idle' && kind === 'wit' && q.spawn.length) return ['selectable'];
     return [];
-  };
-
-  // ---- keyboard ----
-  // (registered below via effect-less handler on the root)
-  const onKeyDown = (ev: KeyboardEvent) => {
-    if (ev.key === 'Escape') {
-      setMode(IDLE);
-      setSetupSel([]);
-      if (pd.kind !== 'defend' && pd.kind !== 'casualties') setPicks([]);
-    } else if (ev.key === 'Enter' && prompt && 'onConfirm' in prompt) {
-      const ok = prompt.kind === 'casualties' ? prompt.picks.length === prompt.count : 'canConfirm' in prompt && prompt.canConfirm;
-      if (ok) prompt.onConfirm();
-    }
   };
 
   // ---- inspector ----
@@ -564,25 +629,140 @@ function Screen({ conn, onRematch }: { conn: GameConnection; onRematch?: () => v
   // ---- controls ----
   const myCp = view.turn?.player === seat ? view.turn.cp : 0;
   const oppCp = view.turn?.player === opp ? view.turn.cp : 0;
-  const activeSide = view.phase === 'play' && view.turn ? view.turn.player : null;
   const fortHere = sel && q?.fortify.includes(sel.hex) ? fortifyCost(live, sel.hex) : null;
   const modeBtn = (k: Mode['kind']) => (mode.kind === k ? 'is-on' : '');
 
-  const controls = turnPd && q && !e && (
-    <div className="actions">
-      {sel && (q.withdraws.length > 0 || sel.withdraw) && (
+  // ---- status line: whose move, and what is asked ----
+  const step: TurnStep =
+    mode.kind === 'deploy'
+      ? picks.length
+        ? 'deployPicked'
+        : 'deploy'
+      : mode.kind === 'reinforce'
+        ? picks.length
+          ? 'reinforcePicked'
+          : 'reinforce'
+        : mode.kind;
+  // Decisions come from the last settled update, while the board may already be animating the next
+  // turn: once the display shows a new turn starting, the status line follows it.
+  const shownPd: PendingDecision =
+    feed.busy && view.phase === 'play' && view.turn && (pd.kind === 'setup' || (pd.kind === 'turn' && view.turn.player !== pd.player))
+      ? {
+          kind: 'turn',
+          players: [view.turn.player],
+          player: view.turn.player,
+          cp: view.turn.cp,
+          capRemaining: pd.kind === 'turn' ? pd.capRemaining : ({} as Record<CpActionType, number>),
+        }
+      : pd;
+  const status = statusFor({
+    pd: shownPd,
+    seat,
+    cp: view.turn?.cp ?? 0,
+    step: turnPd ? step : 'idle',
+    troopsPlaced:
+      pd.kind === 'setup'
+        ? {
+            red: setupCounts(live, 'red').troopsPlaced,
+            black: setupCounts(live, 'black').troopsPlaced,
+          }
+        : {},
+  });
+  const actor = status.actor;
+  const sideState = (p: PlayerId) => (actor === null ? '' : actor === p ? 'is-active' : 'is-idle');
+
+  // ---- the one primary action, always in the same place ----
+  let primary: Primary | null = null;
+  const secondary: ReactNode[] = [];
+  if (prompt?.kind === 'commit') {
+    primary = {
+      kind: 'engage',
+      label: 'Engage',
+      count: `${prompt.picks.length}/3`,
+      lit: prompt.canConfirm,
+      enabled: prompt.canConfirm,
+      onClick: prompt.onConfirm,
+      odds: prompt.odds,
+    };
+    secondary.push(
+      <button key="cancel" type="button" className="btn act ghost" onClick={prompt.onCancel}>
+        Cancel
+      </button>,
+    );
+  } else if (prompt?.kind === 'defend') {
+    primary = {
+      kind: 'defend',
+      label: 'Defend',
+      count: `${prompt.picks.length}/${prompt.max}`,
+      lit: prompt.canConfirm,
+      enabled: prompt.canConfirm,
+      onClick: prompt.onConfirm,
+      odds: prompt.odds,
+    };
+  } else if (prompt?.kind === 'reroll') {
+    primary = {
+      kind: 'pass',
+      label: 'Pass',
+      lit: true,
+      enabled: true,
+      onClick: prompt.onPass,
+    };
+  } else if (prompt?.kind === 'press') {
+    primary = {
+      kind: 'press',
+      label: 'Press',
+      lit: true,
+      enabled: true,
+      onClick: prompt.onPress,
+    };
+    secondary.push(
+      <button key="break" type="button" className="btn act" data-secondary="breakOff" onClick={prompt.onBreak}>
+        Break off
+      </button>,
+    );
+  } else if (prompt?.kind === 'casualties') {
+    const ok = prompt.picks.length === prompt.count;
+    primary = {
+      kind: 'confirm',
+      label: 'Confirm',
+      count: `${prompt.picks.length}/${prompt.count}`,
+      lit: ok,
+      enabled: ok,
+      onClick: prompt.onConfirm,
+    };
+  } else if (prompt?.kind === 'retreat') {
+    primary = {
+      kind: 'stay',
+      label: 'Stay',
+      lit: true,
+      enabled: true,
+      onClick: prompt.onStay,
+    };
+  } else if (turnPd && q && !e) {
+    primary = {
+      kind: 'endTurn',
+      label: 'End turn',
+      lit: mode.kind === 'idle',
+      enabled: true,
+      onClick: () => send({ type: 'endTurn', player: seat }),
+    };
+    if (sel && (q.withdraws.length > 0 || sel.withdraw))
+      secondary.push(
         <button
+          key="withdraw"
           type="button"
-          className={`btn act ${sel.withdraw ? 'is-on lit' : ''}`}
+          className={`btn act ${sel.withdraw ? 'is-on' : ''}`}
           onClick={() => setMode({ ...sel, withdraw: !sel.withdraw })}
           onMouseEnter={() => setCostPreview(1)}
           onMouseLeave={() => setCostPreview(0)}
         >
           Withdraw
-        </button>
-      )}
-      {q.fortify.length > 0 && (
+        </button>,
+      );
+    if (q.fortify.length > 0)
+      secondary.push(
         <button
+          key="fortify"
           type="button"
           className={`btn act ${modeBtn('fortify')} ${fortHere !== null ? 'lit' : ''}`}
           onClick={() => {
@@ -600,14 +780,16 @@ function Screen({ conn, onRematch }: { conn: GameConnection; onRematch?: () => v
               ))}
             </span>
           )}
-        </button>
-      )}
-      {q.deploy.legal && (
+        </button>,
+      );
+    if (q.deploy.legal)
+      secondary.push(
         <button
+          key="deploy"
           type="button"
-          className={`btn act ${modeBtn('deploy')} ${mode.kind === 'deploy' && picks.length ? 'lit' : ''}`}
+          className={`btn act ${modeBtn('deploy')}`}
           onClick={() => {
-            if (mode.kind === 'deploy' && picks.length) send({ type: 'deploy', player: seat, cardIds: picks });
+            if (mode.kind === 'deploy' && picks.length) send({ type: 'deploy', player: seat, cardIds: [picks[0]] });
             else if (mode.kind === 'deploy') setMode(IDLE);
             else {
               setMode({ kind: 'deploy' });
@@ -617,11 +799,13 @@ function Screen({ conn, onRematch }: { conn: GameConnection; onRematch?: () => v
           onMouseEnter={() => setCostPreview(1)}
           onMouseLeave={() => setCostPreview(0)}
         >
-          Deploy{mode.kind === 'deploy' && picks.length > 0 && <span className="pick-count numeral">{picks.length}</span>}
-        </button>
-      )}
-      {q.reinforce.length > 0 && (
+          Deploy
+        </button>,
+      );
+    if (q.reinforce.length > 0)
+      secondary.push(
         <button
+          key="reinforce"
           type="button"
           className={`btn act ${modeBtn('reinforce')}`}
           onClick={() => {
@@ -632,10 +816,12 @@ function Screen({ conn, onRematch }: { conn: GameConnection; onRematch?: () => v
           onMouseLeave={() => setCostPreview(0)}
         >
           Reinforce
-        </button>
-      )}
-      {q.spawn.length > 0 && (
+        </button>,
+      );
+    if (q.spawn.length > 0)
+      secondary.push(
         <button
+          key="spawn"
           type="button"
           className={`btn act ${modeBtn('spawn')}`}
           onClick={() => setMode(mode.kind === 'spawn' ? IDLE : { kind: 'spawn' })}
@@ -643,20 +829,26 @@ function Screen({ conn, onRematch }: { conn: GameConnection; onRematch?: () => v
           onMouseLeave={() => setCostPreview(0)}
         >
           Spawn Wit
-        </button>
-      )}
-      <button
-        type="button"
-        className="btn act act--end"
-        onClick={() => send({ type: 'endTurn', player: seat })}
-      >
-        End turn
-      </button>
-    </div>
-  );
+        </button>,
+      );
+  }
+  if (primary && !canAct) primary = null;
+
+  // ---- keyboard ----
+  const onKeyDown = (ev: KeyboardEvent) => {
+    if (ev.key === 'Escape') {
+      setMode(IDLE);
+      setSetupPick(null);
+      if (pd.kind !== 'defend' && pd.kind !== 'casualties') setPicks([]);
+    } else if (ev.key === 'Enter' && primary && primary.enabled && primary.kind !== 'endTurn') {
+      primary.onClick();
+    }
+  };
 
   const showClash = !!(d.clash || prompt?.kind === 'commit');
   const hint = turnPd && !e ? capHint(turnPd.cp, turnPd.capRemaining, !!sel) : null;
+  const oppLevel = botLevelLabel(presence, opp, live.names[opp] ?? '');
+  const oppName = oppLevel ? 'Bot' : live.names[opp] || FACTION[opp];
 
   return (
     <div
@@ -667,6 +859,7 @@ function Screen({ conn, onRematch }: { conn: GameConnection; onRematch?: () => v
       data-phase={live.phase}
       data-decision={pd.kind}
       data-acting={canAct ? 'me' : (pd.players as PlayerId[]).length ? 'opponent' : 'none'}
+      data-actor={actor ?? 'none'}
       data-busy={feed.busy ? 'true' : 'false'}
       data-version={feed.latest?.version}
     >
@@ -674,14 +867,11 @@ function Screen({ conn, onRematch }: { conn: GameConnection; onRematch?: () => v
 
       {/* ---- top: opponent ---- */}
       <header className="rail rail--top">
-        <div className={`who who--${opp}`}>
-          <span className="who-name">{live.names[opp] || FACTION[opp]}</span>
+        <div className={`who who--${opp} ${sideState(opp)}`}>
+          <span className="who-name">{oppName}</span>
+          {oppLevel && <span className="who-level">{oppLevel}</span>}
           <RoundPips wins={view.roundWins[opp]} side={opp} />
-          {setupPhase ? (
-            live.setup[opp].submitted && <span className="who-ready caps">Ready</span>
-          ) : (
-            <Spheres lit={oppCp} side={opp} mine={false} small />
-          )}
+          {!setupPhase && <Spheres lit={oppCp} side={opp} mine={false} small />}
         </div>
         <div className="opp-reserve">
           <BackRow
@@ -695,7 +885,17 @@ function Screen({ conn, onRematch }: { conn: GameConnection; onRematch?: () => v
               ids={view.destroyed[opp]}
               side={opp}
               width={30}
-              onHover={(on) => setHoverGroup(on ? { kind: 'cards', ids: view.destroyed[opp], label: 'Fallen' } : null)}
+              onHover={(on) =>
+                setHoverGroup(
+                  on
+                    ? {
+                        kind: 'cards',
+                        ids: view.destroyed[opp],
+                        label: 'Fallen',
+                      }
+                    : null,
+                )
+              }
             />
           </div>
         </div>
@@ -714,14 +914,14 @@ function Screen({ conn, onRematch }: { conn: GameConnection; onRematch?: () => v
           pulse={d.pulse}
           flare={d.flare}
           dying={d.dying}
-          activeSide={activeSide}
+          activeSide={actor}
           onHexClick={onHexClick}
           onCardClick={onCardClick}
           onHexHover={setHoverHex}
           onCardHover={setHoverCard}
           onBackground={() => {
             if (mode.kind !== 'idle' && mode.kind !== 'engage') setMode(IDLE);
-            setSetupSel([]);
+            setSetupPick(null);
           }}
           dice={d.clash ? <ClashDice view={view} seat={seat} clash={d.clash} prompt={prompt} waiting={oppDeciding} /> : undefined}
         />
@@ -738,6 +938,16 @@ function Screen({ conn, onRematch }: { conn: GameConnection; onRematch?: () => v
             onHoverCard={setHoverCard}
           />
         )}
+        {status.text && (
+          <div
+            className={`status-line ${actor ? `status-line--${actor}` : ''} ${status.mine ? 'status-line--mine' : 'status-line--theirs'}`}
+            aria-live="polite"
+            data-status={status.mine ? 'me' : actor ? 'opponent' : 'none'}
+          >
+            <i className="status-mark" aria-hidden />
+            <span className="status-text">{status.text}</span>
+          </div>
+        )}
         {d.banner && <BannerView banner={d.banner} seat={seat} holdMs={ROUND_BANNER_MS} onSkip={feed.skip} onRematch={onRematch} />}
         {error && <div className="game-error">{error}</div>}
       </main>
@@ -750,8 +960,18 @@ function Screen({ conn, onRematch }: { conn: GameConnection; onRematch?: () => v
           marksFor={reserveMarks}
           onCardClick={onReserveClick}
           onHover={setHoverCard}
+          idle={actor !== seat}
           drop={reserveDrop}
-          onDrop={() => sel && send({ type: 'withdraw', player: seat, cardIds: sel.cardIds, from: sel.hex, to: 'reserve' })}
+          onDrop={() =>
+            sel &&
+            send({
+              type: 'withdraw',
+              player: seat,
+              cardIds: sel.cardIds,
+              from: sel.hex,
+              to: 'reserve',
+            })
+          }
           trailingW={PILE_W}
           trailing={
             view.destroyed[seat].length > 0 && (
@@ -759,47 +979,48 @@ function Screen({ conn, onRematch }: { conn: GameConnection; onRematch?: () => v
                 view={view}
                 ids={view.destroyed[seat]}
                 side={seat}
-                onHover={(on) => setHoverGroup(on ? { kind: 'cards', ids: view.destroyed[seat], label: 'Fallen' } : null)}
+                onHover={(on) =>
+                  setHoverGroup(
+                    on
+                      ? {
+                          kind: 'cards',
+                          ids: view.destroyed[seat],
+                          label: 'Fallen',
+                        }
+                      : null,
+                  )
+                }
               />
             )
           }
         />
         <div className="command">
-          <div className={`who who--${seat}`}>
+          <div className={`who who--${seat} ${sideState(seat)}`}>
             <span className="who-name">{live.names[seat] || FACTION[seat]}</span>
             <RoundPips wins={view.roundWins[seat]} side={seat} />
           </div>
-          {setupPhase ? (
-            <div className="setup-ctl">
-              <span
-                className={`slots slots--${seat} ${setupOthers > MAX_SETUP_OTHERS ? 'slots--over' : ''}`}
-                aria-label={`${setupOthers} of ${MAX_SETUP_OTHERS} placed`}
-                title={`Up to ${MAX_SETUP_OTHERS} cards besides your Commanders`}
-              >
-                {Array.from({ length: MAX_SETUP_OTHERS }, (_, i) => (
-                  <svg key={i} viewBox="-7 -8 14 16" className={i < setupOthers ? 'on' : ''} aria-hidden>
-                    <polygon points="0,-7 6,-3.5 6,3.5 0,7 -6,3.5 -6,-3.5" />
-                  </svg>
-                ))}
-              </span>
-              <button
-                type="button"
-                className={`btn ${setupLegal ? 'lit' : ''}`}
-                disabled={!setupLegal || feed.busy}
-                onClick={() => send(setupAction)}
-              >
-                Ready
-              </button>
+          {secondary.length > 0 && <div className="actions">{secondary}</div>}
+          <div className="cp-line">
+            {hint && <span className="cap-hint">{hint}</span>}
+            <Spheres lit={myCp} side={seat} mine cost={costPreview} />
+            <div className="primary-slot">
+              {primary && (
+                <span className="odds-wrap">
+                  <button
+                    type="button"
+                    className={`btn primary-act ${primary.lit ? 'lit' : ''}`}
+                    data-primary={primary.kind}
+                    disabled={!primary.enabled}
+                    onClick={primary.onClick}
+                  >
+                    {primary.label}
+                    {primary.count && <span className="pick-count numeral">{primary.count}</span>}
+                  </button>
+                  {primary.odds && <OddsTip lines={primary.odds} />}
+                </span>
+              )}
             </div>
-          ) : (
-            <>
-              <div className="cp-line">
-                {hint && <span className="cap-hint">{hint}</span>}
-                <Spheres lit={myCp} side={seat} mine cost={costPreview} />
-              </div>
-              {controls}
-            </>
-          )}
+          </div>
         </div>
       </footer>
 

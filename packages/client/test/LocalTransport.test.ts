@@ -10,19 +10,36 @@ describe('LocalTransport', () => {
     const t = new LocalTransport({ name: 'Ann', seed: 's1' });
     expect(t.seat).toBe('red');
     expect(t.getLatest()?.view.phase).toBe('setup');
-    expect(t.getPresence()?.black).toEqual({ name: 'Bot', connected: true, bot: true });
+    expect(t.getPresence()?.black).toEqual({ name: 'Bot', connected: true, bot: true, botLevel: 'medium' });
     t.close();
   });
 
-  it('paces the bot at ~600 ms per step', async () => {
+  it('plays at the chosen level and reports it in presence', () => {
+    const t = new LocalTransport({ name: 'Ann', seed: 's1', level: 'hard' });
+    expect(t.level).toBe('hard');
+    expect(t.getPresence()?.black?.botLevel).toBe('hard');
+    expect(t.getPresence()?.red?.botLevel).toBeUndefined();
+    t.close();
+  });
+
+  it('paces the bot at ~600 ms per setup placement', async () => {
     const t = new LocalTransport({ name: 'Ann', seed: 's1' });
+    // Setup is turn-based: if I start, place both my Commanders first (one card per action).
+    for (let i = 0; i < 2; i++) {
+      const pd = pendingDecision(t.getLatest()!.view);
+      if (pd.kind !== 'setup' || pd.player !== 'red') break;
+      t.sendAction({ type: 'setupPlace', player: 'red', placements: [{ cardId: pd.eligible[0], hex: pd.hexes[0] }] });
+    }
+    const pd = pendingDecision(t.getLatest()!.view);
+    expect(pd.kind === 'setup' && pd.player).toBe('black');
+    const before = t.getLatest()!.view.setup.black.placements.length;
     const onState = vi.fn();
     t.subscribe({ onState });
     await vi.advanceTimersByTimeAsync(599);
     expect(onState).not.toHaveBeenCalled();
     await vi.advanceTimersByTimeAsync(2);
     expect(onState).toHaveBeenCalledTimes(1);
-    expect(t.getLatest()?.view.setup.black.submitted).toBe(true);
+    expect(t.getLatest()!.view.setup.black.placements.length).toBe(before + 1);
     t.close();
   });
 

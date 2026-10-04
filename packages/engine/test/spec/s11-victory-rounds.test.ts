@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { pendingDecision, ALL_HEXES, TOWER } from '../../src/index';
-import { buildState, mustApply, mustReject, c, cs, seq, fight, settle, eventsOf, pend, placeCommanders, last, resolvedEv } from './h';
+import { buildState, mustApply, mustReject, c, cs, seq, fight, settle, eventsOf, pend, placeCommanders, completeSetup, last, resolvedEv } from './h';
 
 const end = (s: any, p: 'red' | 'black') => mustApply(s, { type: 'endTurn', player: p });
 
@@ -224,8 +224,9 @@ describe('§11.4 After a round', () => {
     expect(Object.keys(r.fortified)).toHaveLength(0);
     expect(r.towerCount).toEqual({ red: 0, black: 0 });
     expect(r.engagement).toBeNull();
-    expect(r.setup.red.submitted).toBe(false);
-    expect(r.setup.black.submitted).toBe(false);
+    expect(r.setup.red.placements).toEqual([]);
+    expect(r.setup.black.placements).toEqual([]);
+    expect(pend(r)).toMatchObject({ kind: 'setup', player: 'black', step: 'commander' });
   });
 
   it('Commanders are restored at full count (2) even if destroyed; other destroyed cards stay gone', () => {
@@ -240,10 +241,12 @@ describe('§11.4 After a round', () => {
     expect(r.reserve.black).toHaveLength(27);
   });
 
-  it('a restored Commander can be placed in the new setup; a player with only Commanders still plays', () => {
+  it('a restored Commander can be placed in the new setup', () => {
     let r = after();
-    r = mustApply(r, placeCommanders(r, 'red')).state;
-    r = mustApply(r, placeCommanders(r, 'black')).state;
+    // Round 2 is started by black (round 1 starter: red).
+    r = seq(r, ...placeCommanders(r, 'black'), ...placeCommanders(r, 'red')).state;
+    expect(r.stacks['-1,2']).toContain(c('red:K1'));
+    r = completeSetup(r).state;
     expect(r.phase).toBe('play');
     expect(r.stacks['-1,2']).toContain(c('red:K1'));
   });

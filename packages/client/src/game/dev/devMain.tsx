@@ -1,4 +1,4 @@
-// Dev entry: /dev.html?seat=red|black&scenario=setup|play|engage|defend|reroll|casualties|retreat|press|tower&seed=…&delay=650
+// Dev entry: /dev.html?seat=red|black&scenario=setup|setupTroop|setupOpp|play|engage|defend|reroll|casualties|retreat|press|tower&seed=…&delay=650
 import { useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import type { PlayerId } from '@towers/engine';
@@ -14,6 +14,7 @@ function make() {
     scenario: params.get('scenario') ?? 'setup',
     seed: params.get('seed') ?? undefined,
     botDelay: params.has('delay') ? Number(params.get('delay')) : undefined,
+    level: (params.get('level') as 'easy' | 'medium' | 'hard' | null) ?? undefined,
   });
 }
 

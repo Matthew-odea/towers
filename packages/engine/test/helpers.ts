@@ -1,6 +1,6 @@
 import { testing, type Action, type GameEvent, type MatchState, type PlayerId } from '../src/index';
 
-export const { buildState, mustApply, mustReject, applyAll, card, cards, forceDice, eventsOf } = testing;
+export const { buildState, mustApply, mustReject, applyAll, card, cards, forceDice, eventsOf, completeSetup } = testing;
 
 /** Short alias: c('red:L7') -> 'red-light-7'. */
 export const c = (ref: string) => card(ref);

@@ -7,4 +7,6 @@ export type {
   PlayerStats,
   OpponentRecord,
   ErrorCode,
+  BotDifficulty,
 } from '@towers/server/protocol';
+export { BOT_DIFFICULTIES, DEFAULT_BOT_LEVEL, parseBotLevel } from '@towers/server/protocol';

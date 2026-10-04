@@ -1,10 +1,11 @@
 // Bot-vs-bot simulation with invariant checks after every action.
 //
 // Usage:
-//   npm run sim -- --games 500 [--red smart|random] [--black smart|random] [--seed S]
-//                  [--max-turns 400] [--workers N] [--verbose] [--no-check]
+//   npm run sim -- --games 500 [--red easy|medium|hard|random] [--black easy|medium|hard|random] [--seed S]
+//                  [--max-turns 400] [--workers N] [--verbose] [--no-check] [--swap]
 //
-// Defaults: smart vs smart, 20 games, seed "sim", 400 turns per round, workers = CPU count - 1.
+// 'smart' is accepted as an alias of 'medium'. Reports per-level win rates and decision times.
+// Defaults: medium vs medium, 20 games, seed "sim", 400 turns per round, workers = CPU count - 1.
 // Games are independent and seeded `${seed}-${index}`, so any failure can be replayed with
 // `--seed <seed> --from <index> --games 1`.
 import { spawn } from 'node:child_process';
@@ -12,7 +13,10 @@ import { availableParallelism } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import {
   ALL_HEXES,
+  BOT_LEVELS,
   CP_CAP_PER_TYPE,
+  HOME_EDGE,
+  MAX_SETUP_OTHERS,
   CP_PER_TURN,
   PLAYERS,
   ROUNDS_TO_WIN,
@@ -21,6 +25,8 @@ import {
   buildArmy,
   chooseBotAction,
   createMatch,
+  nextSetupPlacer,
+  normalizeBotLevel,
   other,
   pendingDecision,
   validateAction,
@@ -100,7 +106,27 @@ export function checkStateInvariants(s: MatchState): string[] {
   }
   if (s.phase === 'setup') {
     if (s.turn || s.engagement) errs.push('turn/engagement present during setup');
-    if (Object.keys(s.stacks).length) errs.push('cards on the board during setup');
+    // The board holds exactly the setup placements, each on its owner's home edge.
+    const placed = new Map<string, string>();
+    for (const p of PLAYERS) {
+      let troops = 0;
+      for (const pl of s.setup[p].placements) {
+        placed.set(pl.cardId, pl.hex);
+        const k = s.cards[pl.cardId]?.kind;
+        if (s.cards[pl.cardId]?.owner !== p) errs.push(`setup placement ${pl.cardId} not owned by ${p}`);
+        if (k === 'wit') errs.push(`Wit placed during setup (${pl.cardId})`);
+        if (k !== 'commander') troops++;
+        if (!HOME_EDGE[p].includes(pl.hex)) errs.push(`setup placement ${pl.cardId} off ${p}'s home edge (${pl.hex})`);
+      }
+      if (troops > MAX_SETUP_OTHERS) errs.push(`${p} placed ${troops} troops during setup`);
+    }
+    for (const [h, ids] of Object.entries(s.stacks)) {
+      for (const id of ids) if (placed.get(id) !== h) errs.push(`${id} on ${h} during setup without a matching placement`);
+    }
+    let onBoard = 0;
+    for (const ids of Object.values(s.stacks)) onBoard += ids.length;
+    if (onBoard !== placed.size) errs.push(`${onBoard} cards on the board but ${placed.size} setup placements`);
+    if (!nextSetupPlacer(s)) errs.push('setup phase with nobody left to place');
   }
   if (s.phase === 'play') {
     if (!s.turn) errs.push('play phase without a turn');
@@ -360,12 +386,13 @@ function parseArgs(argv: string[]) {
     return i >= 0 && argv[i + 1] !== undefined ? argv[i + 1] : def;
   };
   const level = (v: string): BotLevel => {
-    if (v !== 'smart' && v !== 'random') throw new Error(`bot must be smart or random, got ${v}`);
-    return v;
+    const l = normalizeBotLevel(v);
+    if (!l) throw new Error(`bot must be one of ${BOT_LEVELS.join('|')} (or smart = medium), got ${v}`);
+    return l;
   };
   const tuneRed = arg('tune-red', '');
   const tuneBlack = arg('tune-black', '');
-  const bots = { red: level(arg('red', 'smart')), black: level(arg('black', 'smart')) } as Record<PlayerId, BotLevel>;
+  const bots = { red: level(arg('red', 'medium')), black: level(arg('black', 'medium')) } as Record<PlayerId, BotLevel>;
   const seat = (p: PlayerId, t: string): SeatConfig => ({
     level: bots[p],
     tuning: parseTuning(t),
@@ -396,6 +423,8 @@ function report(records: GameRecord[], o: ReturnType<typeof parseArgs>, ms: numb
   const games = records.length;
   const bySeat = { red: 0, black: 0 } as Record<PlayerId, number>;
   const byLevel: Record<string, number> = {};
+  /** Seats played per bot label (finished matches only); a mirror match counts both seats. */
+  const seatsByLevel: Record<string, number> = {};
   const reasons: Record<string, number> = { tower: 0, decapitation: 0, concede: 0 };
   const reasonsByLevel: Record<string, Record<string, number>> = {};
   let rounds = 0;
@@ -418,6 +447,7 @@ function report(records: GameRecord[], o: ReturnType<typeof parseArgs>, ms: numb
     if (r.errors.length) failures.push(`seed ${g.seed}: ${r.errors.slice(0, 3).join(' | ')}`);
     if (r.winner) {
       decided++;
+      for (const p of PLAYERS) seatsByLevel[g.bots[p]] = (seatsByLevel[g.bots[p]] ?? 0) + 1;
       bySeat[r.winner]++;
       const lv = g.bots[r.winner];
       byLevel[lv] = (byLevel[lv] ?? 0) + 1;
@@ -453,8 +483,10 @@ function report(records: GameRecord[], o: ReturnType<typeof parseArgs>, ms: numb
   );
   lines.push(`  finished matches: ${decided}/${games}`);
   lines.push(`  wins by seat: red ${bySeat.red} (${pct(bySeat.red, decided)}), black ${bySeat.black} (${pct(bySeat.black, decided)})`);
-  if (o.seats.red.label !== o.seats.black.label) {
-    for (const [lv, n] of Object.entries(byLevel)) lines.push(`  wins by bot: ${lv} ${n} (${pct(n, decided)})`);
+  for (const lv of Object.keys(seatsByLevel)) {
+    const n = byLevel[lv] ?? 0;
+    const seats = seatsByLevel[lv];
+    lines.push(`  wins by level: ${lv} ${n}/${seats} seats (${pct(n, seats)})${o.seats.red.label === o.seats.black.label ? ' [mirror match]' : ''}`);
   }
   lines.push(
     `  rounds: ${rounds}; win reasons: tower ${reasons.tower} (${pct(reasons.tower, rounds)}), decapitation ${reasons.decapitation} (${pct(reasons.decapitation, rounds)}), concede ${reasons.concede} (${pct(reasons.concede, rounds)})`,

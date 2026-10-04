@@ -214,7 +214,7 @@ export function applyModel(ctx: Ctx, p: Pos, a: Action): Pos | null {
     case 'deploy': {
       const tw = ctx.tower[me];
       if (p.own[tw] === ctx.foe || !canSpend(p, 'deploy', 1)) return null;
-      if (a.cardIds.length < 1 || a.cardIds.length > 3) return null;
+      if (a.cardIds.length !== 1) return null;
       if (a.cardIds.some((id) => !p.reserve[me].includes(id) || ['wit', 'commander'].includes(ctx.cards[id].kind))) return null;
       const q = clonePos(p);
       spendOn(q, 'deploy', 1);
@@ -355,18 +355,12 @@ export function genActions(ctx: Ctx, p: Pos): Action[] {
   }
   const deployable = p.reserve[me].filter((id) => !['wit', 'commander'].includes(ctx.cards[id].kind));
   if (deployable.length && p.own[myTower] !== foe && canSpend(p, 'deploy', 1)) {
+    // Deploy places exactly one card: offer the most valuable, the best activator and the best Heavy.
     const byVal = [...deployable].sort((a, b) => ctx.val[b] - ctx.val[a]);
     const byWays = [...deployable].sort((a, b) => ctx.ways[b] - ctx.ways[a] || ctx.val[b] - ctx.val[a]);
-    const heavyFirst = [...deployable].sort(
-      (a, b) =>
-        Number(ctx.cards[b].kind === 'heavy') - Number(ctx.cards[a].kind === 'heavy') || ctx.ways[b] - ctx.ways[a],
-    );
-    const seen = new Set<string>();
-    for (const xs of [byVal.slice(0, 3), byWays.slice(0, 3), heavyFirst.slice(0, 3), byWays.slice(0, 1)]) {
-      const k = [...xs].sort().join('|');
-      if (seen.has(k)) continue;
-      seen.add(k);
-      out.push({ type: 'deploy', player: me, cardIds: xs });
+    const heavy = byWays.find((id) => ctx.cards[id].kind === 'heavy');
+    for (const id of new Set([byVal[0], byWays[0], ...(heavy ? [heavy] : [])])) {
+      out.push({ type: 'deploy', player: me, cardIds: [id] });
     }
   }
   if (deployable.length && canSpend(p, 'reinforce', 3)) {

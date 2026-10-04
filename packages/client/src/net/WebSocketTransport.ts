@@ -1,5 +1,5 @@
 import type { Action, PlayerId } from '@towers/engine';
-import type { ClientMessage, ServerMessage, WirePresence } from './protocol';
+import type { BotDifficulty, ClientMessage, ServerMessage, WirePresence } from './protocol';
 import type { ChatMessage, ConnectionListener, GameConnection, Presence, StateUpdate } from './types';
 import { loadConfig } from './config';
 import { readStore, removeStore, seatKey, writeStore } from './storage';
@@ -25,12 +25,13 @@ const OPEN = 1;
 
 /** The server reports an empty seat as `name: null`; the client contract uses `null` for it. */
 export function toPresence(p: WirePresence): Presence {
-  const seat = (e: WirePresence['red']) => (e && e.name !== null ? { name: e.name, connected: e.connected, bot: e.bot } : null);
+  const seat = (e: WirePresence['red']) =>
+    e && e.name !== null ? { name: e.name, connected: e.connected, bot: e.bot, ...(e.bot && e.botLevel ? { botLevel: e.botLevel } : {}) } : null;
   return { red: seat(p.red), black: seat(p.black) };
 }
 
 type Mode =
-  | { kind: 'create'; vsBot: boolean }
+  | { kind: 'create'; vsBot: boolean; botLevel?: BotDifficulty }
   | { kind: 'join'; gameId: string }
   | { kind: 'rematch'; from: string; seatToken: string };
 
@@ -62,8 +63,10 @@ export class WebSocketTransport implements GameConnection {
     if (mode.kind === 'join') this._gameId = mode.gameId;
   }
 
-  static async create(username: string, vsBot: boolean, deps: TransportDeps = {}): Promise<WebSocketTransport> {
-    const t = new WebSocketTransport(username, { kind: 'create', vsBot }, deps);
+  /** `vsBot`: false for a game against a friend; true or a difficulty for a game against the bot. */
+  static async create(username: string, vsBot: boolean | BotDifficulty, deps: TransportDeps = {}): Promise<WebSocketTransport> {
+    const mode: Mode = typeof vsBot === 'string' ? { kind: 'create', vsBot: true, botLevel: vsBot } : { kind: 'create', vsBot };
+    const t = new WebSocketTransport(username, mode, deps);
     await t.start();
     return t;
   }
@@ -188,7 +191,11 @@ export class WebSocketTransport implements GameConnection {
     switch (msg.t) {
       case 'welcome': {
         if (this.mode.kind === 'create' && !this._gameId) {
-          this.send({ t: 'create', vsBot: this.mode.vsBot });
+          this.send(
+            this.mode.botLevel
+              ? { t: 'create', vsBot: this.mode.vsBot, botLevel: this.mode.botLevel }
+              : { t: 'create', vsBot: this.mode.vsBot },
+          );
         } else if (this.mode.kind === 'rematch' && !this._gameId) {
           this.send({ t: 'rematch', gameId: this.mode.from, seatToken: this.mode.seatToken });
         } else {

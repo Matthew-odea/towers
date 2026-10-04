@@ -169,8 +169,8 @@ describe('§10.3 Reinforce', () => {
 describe('§10.4 Deploy', () => {
   const dp = (...ids: string[]) => ({ type: 'deploy' as const, player: 'red' as const, cardIds: cs(...ids) });
 
-  it('puts 1 to 3 Reserve cards on your own Tower for 1 CP', () => {
-    for (const ids of [['red:L2'], ['red:L2', 'red:H3'], ['red:L2', 'red:H3', 'red:A1']]) {
+  it('puts exactly 1 Reserve card on your own Tower for 1 CP', () => {
+    for (const ids of [['red:L2'], ['red:H3'], ['red:A1'], ['red:S1'], ['red:V2']]) {
       const r = mustApply(buildState(), dp(...ids));
       expect(r.state.stacks['-1,2'].sort()).toEqual(cs(...ids).sort());
       expect(r.state.turn!.cp).toBe(3);
@@ -183,10 +183,11 @@ describe('§10.4 Deploy', () => {
     expect(r.state.stacks['-1,2']).toHaveLength(2);
   });
 
-  it('rejects 0 or 4 cards, Wit, Commanders, cards not in Reserve and the opponent cards', () => {
+  it('rejects 0, 2 or 3 cards, Wit, Commanders, cards not in Reserve and the opponent cards', () => {
     const s = buildState({ board: { '0,0': ['red:L5'] } });
     mustReject(s, dp());
-    mustReject(s, dp('red:L2', 'red:L3', 'red:L4', 'red:L6'));
+    mustReject(s, dp('red:L2', 'red:H3'));
+    mustReject(s, dp('red:L2', 'red:H3', 'red:A1'));
     mustReject(s, dp('red:W'));
     mustReject(s, dp('red:K1'));
     mustReject(s, dp('red:L5'));

@@ -108,9 +108,21 @@
 .who--black .who-name {
   color: var(--black-300);
 }
-.who-ready {
-  color: var(--parchment);
-  padding-left: 4px;
+.who-level {
+  font-size: var(--fs-sm);
+  letter-spacing: 0.04em;
+  color: var(--parchment-faint);
+}
+.who-level::before {
+  content: '·';
+  margin-right: 8px;
+}
+/* The side that must act stands out; the other sits back. */
+.who {
+  transition: opacity var(--dur-slow) var(--ease-out);
+}
+.who.is-idle {
+  opacity: 0.5;
 }
 
 .round-pips {
@@ -194,7 +206,50 @@
 }
 .board-wrap {
   position: absolute;
-  inset: 0 300px 0 300px;
+  inset: 0 300px 30px 300px;
+}
+
+/* ---- status line: whose move, what is asked -------------------------------------------- */
+.status-line {
+  position: absolute;
+  left: 50%;
+  bottom: 2px;
+  transform: translateX(-50%);
+  z-index: var(--z-hud);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  height: 28px;
+  padding: 0 16px;
+  font-family: var(--font-display);
+  font-size: var(--fs-lg);
+  line-height: 1;
+  white-space: nowrap;
+  pointer-events: none;
+  color: var(--parchment-dim);
+  transition: color var(--dur-med);
+}
+.status-line--red {
+  --status-side: var(--red-300);
+}
+.status-line--black {
+  --status-side: var(--black-300);
+}
+.status-mark {
+  width: 9px;
+  height: 9px;
+  flex: none;
+  transform: rotate(45deg);
+  background: var(--status-side, var(--parchment-faint));
+}
+.status-line--mine {
+  color: var(--parchment);
+}
+.status-line--mine .status-mark {
+  box-shadow: 0 0 8px 1px var(--status-side);
+}
+.status-line--theirs .status-text {
+  font-style: italic;
 }
 .board-stage {
   position: absolute;
@@ -220,10 +275,10 @@
     background 700ms;
 }
 .board-stage--side-red {
-  --side-glow: rgba(70, 120, 170, 0.32);
+  --side-glow: rgba(70, 120, 170, 0.5);
 }
 .board-stage--side-black {
-  --side-glow: rgba(160, 60, 70, 0.3);
+  --side-glow: rgba(160, 60, 70, 0.46);
 }
 .board-stage--active-near .board-edge-glow {
   opacity: 1;
@@ -1034,6 +1089,11 @@
   position: relative;
   flex: 1;
   min-width: 0;
+  transition: filter var(--dur-slow) var(--ease-out), opacity var(--dur-slow) var(--ease-out);
+}
+/* Not my move: the hand sits back. */
+.reserve-fan--idle {
+  filter: saturate(0.55) brightness(0.72);
 }
 .fan-card {
   position: absolute;
@@ -1056,6 +1116,10 @@
 }
 .fan-card--up .card {
   transform: translateY(-14px);
+}
+/* Cards you can pick right now rise a little out of the hand. */
+.fan-card--able .card {
+  transform: translateY(-7px);
 }
 .fan-card--up:hover .card {
   transform: translateY(-40px);
@@ -1159,7 +1223,36 @@
 .cp-line {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 14px;
+}
+/* The primary action: always here, right of the spheres, named for what it does now. */
+.primary-slot {
+  min-width: 128px;
+  display: flex;
+  justify-content: flex-end;
+}
+.btn.primary-act {
+  min-height: 42px;
+  min-width: 128px;
+  padding: 0 20px;
+  font-family: var(--font-display);
+  font-size: 18px;
+  font-weight: 400;
+  letter-spacing: 0.03em;
+  border-color: rgba(216, 201, 159, 0.5);
+}
+.btn.primary-act.lit:not(:disabled) {
+  background: linear-gradient(180deg, #2a3a46, #1a242c);
+  animation: primary-in var(--dur-med) var(--ease-out);
+}
+.btn.primary-act .pick-count {
+  font-size: 14px;
+  margin-left: 4px;
+}
+@keyframes primary-in {
+  from {
+    box-shadow: var(--shadow-inset), 0 0 0 1px rgba(220, 246, 255, 0.9), 0 0 22px 4px rgba(150, 225, 250, 0.6);
+  }
 }
 .cap-hint {
   font-size: var(--fs-sm);
@@ -1182,51 +1275,11 @@
   border-color: var(--parchment);
   color: var(--parchment);
 }
-.act--end {
-  margin-left: 10px;
-}
 .pick-count {
   font-size: 12px;
   opacity: 0.8;
   margin-left: 2px;
 }
-.setup-ctl {
-  display: flex;
-  align-items: center;
-  gap: 14px;
-}
-.slots {
-  display: inline-flex;
-  gap: 3px;
-  cursor: default;
-}
-.slots svg {
-  width: 13px;
-  height: 15px;
-  overflow: visible;
-}
-.slots polygon {
-  fill: none;
-  stroke: var(--slot-line);
-  stroke-width: 1.3;
-  transition: fill var(--dur-med);
-}
-.slots svg.on polygon {
-  fill: var(--slot-fill);
-  stroke: var(--slot-fill);
-}
-.slots--red {
-  --slot-line: var(--red-400);
-  --slot-fill: var(--red-300);
-}
-.slots--black {
-  --slot-line: var(--black-400);
-  --slot-fill: var(--black-300);
-}
-.slots--over {
-  --slot-fill: var(--danger);
-}
-
 /* ---- clash column --------------------------------------------------------------------- */
 .clash {
   position: absolute;
@@ -1591,8 +1644,7 @@
     background-position: -100% 0;
   }
 }
-.reroll-bar,
-.press-bar {
+.reroll-bar {
   display: flex;
   align-items: center;
   gap: 10px;
@@ -1644,22 +1696,6 @@
   min-height: 40px;
   padding-top: 4px;
 }
-.clash-confirm {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-}
-.casualty-ask {
-  color: var(--parchment-dim);
-  display: inline-flex;
-  align-items: baseline;
-  gap: 6px;
-}
-.casualty-ask b {
-  font-size: var(--fs-xl);
-  color: var(--parchment);
-  letter-spacing: 0;
-}
 .odds-wrap {
   position: relative;
   display: inline-flex;
@@ -1681,6 +1717,11 @@
 }
 .odds-wrap:hover .odds-tip {
   display: flex;
+}
+.primary-slot .odds-tip {
+  left: auto;
+  right: 0;
+  transform: none;
 }
 
 .wit-dial {
@@ -1957,7 +1998,7 @@
 .game-error {
   position: absolute;
   left: 50%;
-  bottom: 8px;
+  bottom: 40px;
   transform: translateX(-50%);
   z-index: var(--z-banner);
   max-width: 560px;

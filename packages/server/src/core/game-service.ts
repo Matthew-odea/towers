@@ -15,6 +15,11 @@ import {
   MAX_CHAT_KEPT,
   MAX_MESSAGE_BYTES,
   BOT_NAME,
+  BOT_DIFFICULTIES,
+  DEFAULT_BOT_LEVEL,
+  botOpponentName,
+  parseBotLevel,
+  type BotDifficulty,
   MAX_USERNAME_CHARS,
   emptyStats,
   normalizeName,
@@ -40,6 +45,8 @@ import type { RateLimiter } from './rate-limit';
 export const BOT_STEP_CAP = 500;
 /** Default wall-clock budget for one bot run (the Lambda timeout is 25 s; the broadcast needs headroom). */
 export const BOT_BUDGET_MS = 20_000;
+/** Slack kept before the deadline so a slow (hard) bot decision cannot run past it. */
+export const BOT_STEP_MARGIN_MS = 500;
 const CONNECTION_TTL_SECONDS = 3 * 60 * 60;
 const MAX_WRITE_ATTEMPTS = 6;
 const SEATS: PlayerId[] = ['red', 'black'];
@@ -101,7 +108,8 @@ function cleanUsername(v: unknown): string | null {
   // eslint-disable-next-line no-control-regex
   const s = normalizeName(v).replace(/[\u0000-\u001f\u007f]/g, ' ').replace(/\s+/g, ' ').trim();
   if (s.length < 1 || s.length > MAX_USERNAME_CHARS) return null;
-  if (statsKey(s) === statsKey(BOT_NAME)) return null; // reserved for the bot opponent
+  const k = statsKey(s);
+  if (k === statsKey(BOT_NAME) || BOT_DIFFICULTIES.some((l) => k === statsKey(botOpponentName(l)))) return null; // reserved for the bot opponent
   return s;
 }
 
@@ -202,10 +210,16 @@ export class GameService {
     await this.deliver(connId, { t: 'welcome', username });
   }
 
-  private async onCreate(connId: string, m: { vsBot?: unknown }, deadline: number): Promise<void> {
+  private async onCreate(connId: string, m: { vsBot?: unknown; botLevel?: unknown }, deadline: number): Promise<void> {
     const conn = await this.connections.get(connId);
     if (!conn?.username) return this.fail(connId, 'need_hello', 'Say hello with a username first.');
-    const made = this.newGame(conn.username, m.vsBot === true, deadline);
+    let level = DEFAULT_BOT_LEVEL;
+    if (m.botLevel !== undefined && m.botLevel !== null) {
+      const parsed = parseBotLevel(m.botLevel);
+      if (!parsed) return this.fail(connId, 'bad_message', 'botLevel must be easy, medium or hard.');
+      level = parsed;
+    }
+    const made = this.newGame(conn.username, m.vsBot === true, deadline, level);
     if (!(await this.games.put(made.rec, null))) {
       // Game ids are random; a collision is effectively impossible.
       return this.fail(connId, 'busy', 'Could not create the game, try again.');
@@ -214,7 +228,7 @@ export class GameService {
   }
 
   /** A fresh game record with `username` in a (random) seat, plus the bot's opening steps. */
-  private newGame(username: string, vsBot: boolean, deadline: number): { rec: GameRecord; seat: PlayerId; token: string; steps: Step[] } {
+  private newGame(username: string, vsBot: boolean, deadline: number, botLevel: BotDifficulty = DEFAULT_BOT_LEVEL): { rec: GameRecord; seat: PlayerId; token: string; steps: Step[] } {
     const now = this.clock.now();
     const seat = this.hooks?.creatorSeat ?? randomSeat();
     const token = randomToken();
@@ -223,6 +237,7 @@ export class GameService {
       rev: 1,
       version: 0,
       vsBot,
+      ...(vsBot ? { botLevel } : {}),
       seats: { red: null, black: null },
       state: null,
       commits: { red: {}, black: {} },
@@ -234,7 +249,7 @@ export class GameService {
     rec.seats[seat] = { name: username, token, bot: false };
     let steps: Step[] = [];
     if (vsBot) {
-      rec.seats[otherSeat(seat)] = { name: 'Bot', token: randomToken(), bot: true };
+      rec.seats[otherSeat(seat)] = { name: botOpponentName(botLevel), token: randomToken(), bot: true };
       rec.state = this.newMatch(rec);
       steps = this.runBots(rec, deadline);
     }
@@ -279,7 +294,7 @@ export class GameService {
       ? { next: old.rematch, by: old.rematchBy ?? null, token: old.rematchToken ?? null }
       : null;
     if (!link) {
-      const made = this.newGame(conn.username, old.vsBot, deadline);
+      const made = this.newGame(conn.username, old.vsBot, deadline, old.botLevel ?? DEFAULT_BOT_LEVEL);
       if (!(await this.games.put(made.rec, null))) return this.fail(connId, 'busy', 'Could not create the game, try again.');
       const linked = await this.mutate(gameId, (rec) => {
         const won = !rec.rematch;
@@ -479,13 +494,14 @@ export class GameService {
     const botSeat = SEATS.find((s) => rec.seats[s]?.bot);
     if (!botSeat || !rec.state) return steps;
     while (steps.length < BOT_STEP_CAP) {
-      if (this.clock.now() >= deadline) {
+      // Hard bot decisions take up to ~400 ms; stop early enough that a step cannot overrun the budget.
+      if (this.clock.now() + BOT_STEP_MARGIN_MS >= deadline) {
         this.log(`bot run deadline hit in game ${rec.id}`);
         break;
       }
       const dec = pendingDecision(rec.state);
       if (!(dec.players as PlayerId[]).includes(botSeat)) break;
-      const action = chooseBotAction(rec.state, botSeat);
+      const action = chooseBotAction(rec.state, botSeat, { level: rec.botLevel ?? DEFAULT_BOT_LEVEL });
       if (!action) break;
       const r = applyAction(rec.state, action);
       if (!r.ok) {
@@ -664,6 +680,7 @@ export class GameService {
       return {
         name: s?.name ?? null,
         bot: s?.bot ?? false,
+        ...(s?.bot ? { botLevel: rec.botLevel ?? DEFAULT_BOT_LEVEL } : {}),
         connected: s ? s.bot || conns.some((c) => c.seat === seat) : false,
       };
     };

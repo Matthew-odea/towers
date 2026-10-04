@@ -11,8 +11,8 @@ import {
 } from './engagement';
 import { HOME_EDGE, TOWER, areAdjacent, distance, isHex, other } from './hex';
 import { endRound, startTurn } from './lifecycle';
+import { nextSetupPlacer } from './setup';
 import {
-  MAX_SETUP_OTHERS,
   PLAYERS,
   emit,
   enterable,
@@ -48,45 +48,37 @@ type Loose<T> = { [K in keyof T]: K extends 'type' | 'player' ? T[K] : unknown }
 function handleSetupPlace(ctx: HandlerCtx, a: Loose<A<'setupPlace'>>): string | null {
   const s = ctx.s;
   if (s.phase !== 'setup') return 'Setup placement is only allowed during round setup.';
-  if (s.setup[a.player].submitted) return `${playerLabel(a.player)} has already submitted a setup placement.`;
-  if (!Array.isArray(a.placements)) return 'placements must be an array of { cardId, hex }.';
-  const placements = a.placements as unknown[];
-  const seen = new Set<string>();
-  let others = 0;
-  for (const p of placements) {
-    if (typeof p !== 'object' || p === null) return 'Each placement must be { cardId, hex }.';
-    const { cardId, hex } = p as { cardId?: unknown; hex?: unknown };
-    if (typeof cardId !== 'string') return 'Each placement needs a cardId string.';
-    const card = getCard(s, cardId);
-    if (!card) return `Unknown card "${cardId}".`;
-    if (card.owner !== a.player) return `${cardName(card)} (${cardId}) belongs to ${playerLabel(card.owner)}.`;
-    if (seen.has(cardId)) return `${cardName(card)} is placed more than once.`;
-    seen.add(cardId);
-    if (!s.reserve[a.player].includes(cardId)) return `${cardName(card)} is not available (destroyed).`;
-    if (card.kind === 'wit') return 'Wit cannot be placed during setup; it always starts in Reserve.';
-    if (!isHex(hex) || !HOME_EDGE[a.player].includes(hex)) {
-      return `${cardName(card)} must be placed on your home edge (${HOME_EDGE[a.player].join(', ')}).`;
-    }
-    if (card.kind !== 'commander') others += 1;
+  const next = nextSetupPlacer(s);
+  if (!next) return 'Setup is already complete.';
+  if (next.player !== a.player) return `It is ${playerLabel(next.player)}'s setup turn, not ${playerLabel(a.player)}'s.`;
+  if (!Array.isArray(a.placements)) return 'placements must be an array with exactly one { cardId, hex }.';
+  if (a.placements.length !== 1) return `Place exactly one card per setup turn (got ${a.placements.length}).`;
+  const p = a.placements[0] as unknown;
+  if (typeof p !== 'object' || p === null) return 'The placement must be { cardId, hex }.';
+  const { cardId, hex } = p as { cardId?: unknown; hex?: unknown };
+  if (typeof cardId !== 'string') return 'The placement needs a cardId string.';
+  const card = getCard(s, cardId);
+  if (!card) return `Unknown card "${cardId}".`;
+  if (card.owner !== a.player) return `${cardName(card)} (${cardId}) belongs to ${playerLabel(card.owner)}.`;
+  if (card.kind === 'wit') return 'Wit cannot be placed during setup; it always starts in Reserve.';
+  if (s.destroyed[a.player].includes(cardId)) return `${cardName(card)} is not available (destroyed).`;
+  if (!s.reserve[a.player].includes(cardId)) return `${cardName(card)} has already been placed.`;
+  if (next.step === 'commander' && card.kind !== 'commander') {
+    return `Place your Commanders first (${cardName(card)} is not a Commander).`;
   }
-  const commanders = s.reserve[a.player].filter((id) => s.cards[id].kind === 'commander');
-  for (const c of commanders) if (!seen.has(c)) return `Both Commanders must be placed; ${label(s, c)} is missing.`;
-  if (others > MAX_SETUP_OTHERS) return `At most ${MAX_SETUP_OTHERS} non-Commander cards may be placed (got ${others}).`;
+  if (next.step === 'troop' && card.kind === 'commander') return 'Commanders have already been placed.';
+  if (!isHex(hex) || !HOME_EDGE[a.player].includes(hex)) {
+    return `${cardName(card)} must be placed on your home edge (${HOME_EDGE[a.player].join(', ')}).`;
+  }
   if (ctx.dryRun) return null;
 
-  s.setup[a.player] = {
-    submitted: true,
-    placements: placements.map((p) => {
-      const { cardId, hex } = p as { cardId: string; hex: string };
-      return { cardId, hex };
-    }),
-  };
-  emit(ctx, { type: 'setupSubmitted', player: a.player });
-  if (PLAYERS.every((p) => s.setup[p].submitted)) {
-    for (const p of PLAYERS) for (const pl of s.setup[p].placements!) placeCards(s, [pl.cardId], pl.hex);
+  s.setup[a.player].placements.push({ cardId, hex });
+  placeCards(s, [cardId], hex);
+  emit(ctx, { type: 'setupPlaced', player: a.player, cardId, hex, step: next.step });
+  if (nextSetupPlacer(s) === null) {
     emit(ctx, {
-      type: 'setupRevealed',
-      placements: { red: [...s.setup.red.placements!], black: [...s.setup.black.placements!] },
+      type: 'setupComplete',
+      placements: { red: [...s.setup.red.placements], black: [...s.setup.black.placements] },
     });
     s.phase = 'play';
     startTurn(ctx, s.roundStarter);
@@ -194,7 +186,7 @@ function handleWithdraw(ctx: HandlerCtx, a: Loose<A<'withdraw'>>): string | null
 
 function handleDeploy(ctx: HandlerCtx, a: Loose<A<'deploy'>>): string | null {
   const s = ctx.s;
-  const err = requireFreeTurn(s, a.player) ?? checkIdList(a.cardIds, 1, 3, 'Deployed cards');
+  const err = requireFreeTurn(s, a.player) ?? checkIdList(a.cardIds, 1, 1, 'Deploy');
   if (err) return err;
   const ids = a.cardIds as string[];
   const ownErr = checkOwned(s, a.player, ids);

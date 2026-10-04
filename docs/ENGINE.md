@@ -30,7 +30,10 @@ viewFor(state: MatchState | PlayerView, player: PlayerId): PlayerView
 pendingDecision(state: MatchState | PlayerView): PendingDecision
 actingPlayers(state): PlayerId[]          // pendingDecision(state).players
 mustAct(state, player): boolean
-chooseBotAction(state: MatchState | PlayerView, player: PlayerId, opts?: { level?: 'smart' | 'random'; rand?: () => number }): Action | null
+chooseBotAction(state: MatchState | PlayerView, player: PlayerId, opts?: { level?: BotLevel; rand?: () => number }): Action | null
+type BotLevel = 'easy' | 'medium' | 'hard' | 'random'   // 'smart' is still accepted as an alias of 'medium'
+BOT_LEVELS: readonly BotLevel[]                           // ['easy', 'medium', 'hard', 'random']
+normalizeBotLevel(level: unknown): BotLevel | null        // 'smart' -> 'medium'; unknown -> null
 ENGINE_VERSION: string
 ```
 
@@ -41,11 +44,22 @@ ENGINE_VERSION: string
 - `validateAction` runs the same checks as `applyAction` without executing anything. It works
   on a `PlayerView`, which is how clients and bots test legality.
 - `chooseBotAction` returns a legal action for `player`'s pending decision, or `null` if that
-  player has nothing to decide. The default level `'smart'` is the heuristic search bot in
-  `src/bot/smart.ts` (two-ply search over its own turn actions in a light board model, exact
-  engagement expected values; about 5 ms per decision on average, p99 about 50 ms); `'random'`
-  picks uniformly random legal actions (`src/bot/random.ts`). Without `rand` it is deterministic
-  for a given state. It never concedes.
+  player has nothing to decide. Levels (dispatch in `src/bot/index.ts`):
+  - `'medium'` (default; `'smart'` is a legacy alias): the heuristic search bot in
+    `src/bot/smart.ts` (two-ply search over its own turn actions in a light board model, exact
+    engagement expected values; about 3–4 ms per decision on average, p99 about 20–25 ms).
+    Setup: both Commanders on its Tower, Heavy Infantry escorts on the Tower first (a third
+    escort if the opponent has massed a big stack on a side hex), then one strike group on the
+    side hex with more open Plains, avoiding the flank the opponent has already loaded. Deploy
+    candidates are single cards (most valuable, best activator, best Heavy).
+  - `'easy'`: `chooseEasyAction(state, player, rand)` in `src/bot/easy.ts`.
+  - `'hard'`: `chooseHardAction(state, player, rand)` in `src/bot/hard/index.ts`.
+  - `'random'`: random legal actions (`src/bot/random.ts`), including one random eligible card
+    on a random home-edge hex per setup turn.
+
+  `easy` and `hard` currently delegate to `medium` (stubs to be replaced). Every level must
+  return a legal action, never concede, and use no Node APIs. Without `rand` the choice is
+  deterministic for a given state.
 
 ### Actions
 
@@ -54,10 +68,10 @@ straight in.
 
 | `type` | Fields | When |
 |---|---|---|
-| `setupPlace` | `placements: { cardId, hex }[]` | setup; once per player per round |
+| `setupPlace` | `placements: [{ cardId, hex }]` (**exactly one**) | `setup` decision, on your setup turn |
 | `move` | `cardIds, from, path` | your turn; `path` = `[hex]`, or `[plains, plains]` for an all-Cavalry move |
 | `withdraw` | `cardIds, from, to: HexKey \| 'reserve'` | your turn |
-| `deploy` | `cardIds` (1–3) | your turn |
+| `deploy` | `cardIds` (**exactly 1**) | your turn |
 | `fortify` | `hex` | your turn |
 | `reinforce` | `cardId, hex` | your turn |
 | `spawnWit` | `hex` | your turn |
@@ -79,8 +93,9 @@ a Commander reroll uses the first unused committed Commander.
 ## 2. State
 
 `MatchState` = `PublicState` + `{ seed, rng, diceQueue }`.
-`PlayerView` = `PublicState` + `{ viewer }`. A view has no `seed`, `rng` or `diceQueue`, and
-during setup the opponent's `setup[p].placements` is `null`; their `submitted` flag stays visible.
+`PlayerView` = `PublicState` + `{ viewer }`. A view has no `seed`, `rng` or `diceQueue`.
+Nothing else is hidden: setup is open (RULINGS §4), so both players' setup placements are visible
+as they happen.
 
 | Field | Meaning |
 |---|---|
@@ -96,11 +111,11 @@ during setup the opponent's `setup[p].placements` is `null`; their `submitted` f
 | `winner` | match winner once `phase === 'matchOver'` |
 | `terrain` | `Record<HexKey, 'plains' \| 'forest' \| 'mountain' \| 'tower'>` for this round |
 | `stacks` | `Record<HexKey, cardId[]>`, non-empty hexes only, one owner per hex, insertion order |
-| `reserve` | per player. **During setup every available card, Commanders included, is here** until the placements are revealed |
+| `reserve` | per player. At the start of setup every available card, Commanders included, is here; each setup placement moves one card to the board |
 | `destroyed` | per player. Commanders leave this pile when the next round starts |
 | `fortified` | `Record<HexKey, PlayerId>`: hexes Fortified for the player holding them |
 | `towerCount` | `{ red, black }` per §11.1 |
-| `setup` | `Record<PlayerId, { submitted, placements }>` |
+| `setup` | `Record<PlayerId, { placements: { cardId, hex }[] }>`: this round's setup placements in order (Commanders first). Reset to `[]` when a round starts; kept during play |
 | `turn` | `null` outside play, else `TurnState` (below) |
 | `engagement` | `null`, or the live `Engagement` (below) |
 
@@ -122,7 +137,9 @@ result (latest EngagementResult), casualtySteps, casualtiesChosen, retreatHexes`
 
 ### Round flow
 
-`setup` (both submit) → reveal → `play` (turns) → round won → **straight into the next round's
+`setup` (open, one placement per setup turn: starter's 2 Commanders, other player's 2
+Commanders, then troops alternating from the starter until each has placed 6) → `setupComplete`
+→ `play` (turns, starter first) → round won → **straight into the next round's
 `setup`** (new terrain, Commanders restored, surviving cards back in Reserve, the other player
 starts), or `matchOver` at 2 round wins. There is no `roundOver` decision: show the result
 from the `roundWon` event and `roundResults`. `matchOver` is terminal and every action is
@@ -142,17 +159,22 @@ display order), `buildAllCards(), cardName(card)` ("Light Infantry 7", "Archer (
 `cardActivates(card, dice, witNumber), waysToRoll(total)`.
 
 Constants: `PLAYERS, CP_PER_TURN (4), CP_CAP_PER_TYPE (3), CP_ACTION_TYPES, TOWER_WIN_COUNT (3),
-ROUNDS_TO_WIN (2), MAX_SETUP_OTHERS (6)`.
+ROUNDS_TO_WIN (2), MAX_SETUP_OTHERS (6, troops per player per setup)`.
+
+Setup helpers (`src/setup.ts`): `nextSetupPlacer(s)` → `{ player, step } | null`,
+`setupEligible(s, player)` (cards that player may place now; empty if it is not their setup
+turn), `setupCounts(s, player)` → `{ placed, troopsPlaced, commandersLeft, eligibleTroops, troopsLeft }`.
 
 ---
 
 ## 3. PendingDecision
 
-Every variant has `players`, the players who must act now. Only `setup` can list two.
+Every variant has `players`, the players who must act now. Every variant except `matchOver`
+lists exactly one player.
 
 | `kind` | Fields | Respond with |
 |---|---|---|
-| `setup` | `players` (not yet submitted) | `setupPlace` |
+| `setup` | `player, step: 'commander' \| 'troop', eligible: cardId[], hexes: HexKey[]` (the player's home edge), `placed`, `commandersLeft`, `troopsLeft` (each `Record<PlayerId, number>`) | `setupPlace` with one `{ cardId, hex }` (`cardId` from `eligible`, `hex` from `hexes`) |
 | `turn` | `player, cp, capRemaining: Record<CpActionType, number>` | any turn action, `endTurn` |
 | `defend` | `player, target, eligible, min: 1, max, witEligible` | `defend` |
 | `reroll` | `player, dice, options: ({ source: 'commander', commanderId } \| { source: 'disadvantage' })[]` | `reroll` / `passReroll` |
@@ -182,13 +204,13 @@ decision always has `cp >= 1`.
 
 ## 4. GameEvent reference
 
-Events can be shown to both players. None of them reveals a hidden setup placement.
+Events can be shown to both players. Nothing in the game is hidden.
 
 | `type` | Fields |
 |---|---|
 | `roundStarted` | `round, firstPlayer, terrain` |
-| `setupSubmitted` | `player` |
-| `setupRevealed` | `placements: Record<PlayerId, { cardId, hex }[]>` |
+| `setupPlaced` | `player, cardId, hex, step: 'commander' \| 'troop'` (one per setup placement) |
+| `setupComplete` | `placements: Record<PlayerId, { cardId, hex }[]>` (all of this round's setup placements; `turnStarted` for the starter follows) |
 | `turnStarted` | `player, turn, cp` |
 | `turnEnded` | `player`, `auto?` (`true` when the engine ended the turn at 0 CP) |
 | `towerCount` | `player, count, hex`. Fires when the count goes up at turn start and when it resets to 0 |
@@ -249,7 +271,7 @@ Mountain lock and engagement state.
 | `hasSupply(s, player, hex)`, `suppliedHexes(s, player)` | supply line per §10.2 |
 | `reinforceTargets(s, player)` | your Fortified hexes with supply (position only; does not check CP) |
 | `reserveDeployable(s, player)` | Reserve cards that can be Deployed or Reinforced (not Wit, not Commanders) |
-| `deployInfo(s, player)` | `{ legal, reason, hex, cards, max }` |
+| `deployInfo(s, player)` | `{ legal, reason, hex, cards, max }` (`max` is 1, or 0 with nothing deployable) |
 | `retreatHexes(s)` | legal Combat Retreat hexes for the live engagement |
 | `rerollOptions(s, player)` | usable reroll options in the open window |
 | `casualtyPool(s, engagement, side, result)` | eligible casualties for a side (§12.1, ranged Archer immunity) |
@@ -263,7 +285,7 @@ Mountain lock and engagement state.
 
 ```ts
 import { testing, pendingDecision } from '@towers/engine';
-const { buildState, card, cards, forceDice, mustApply, mustReject, applyAll, eventsOf } = testing;
+const { buildState, card, cards, forceDice, mustApply, mustReject, applyAll, eventsOf, completeSetup } = testing;
 ```
 
 - `card(ref)` resolves a short reference to a card id. Accepted forms:
@@ -292,6 +314,12 @@ const { buildState, card, cards, forceDice, mustApply, mustReject, applyAll, eve
   `applyAll(state, actions)` does the same for a list. `mustReject(state, action)` returns the
   error message, or throws if the action was accepted.
 - `eventsOf(events, type)` filters events by type, with typing.
+- `completeSetup(state, plan?)` plays the current round's setup to the end and returns
+  `{ state, events }` (play phase). `plan` is `{ red?: [ref, hex][], black?: [ref, hex][] }`;
+  on each setup turn the acting player uses their first planned entry that is legal for the
+  current step. Otherwise Commanders go on the Tower and troops are filled with the least useful
+  eligible cards (Light Infantry 2, 3, 4, 10, 5, 9, then Heavy Infantry likewise) on
+  `HOME_EDGE[p][0]` (red `-2,2`, black `0,-2`).
 
 Example (worked example 4):
 
@@ -315,10 +343,12 @@ it with `passReroll`/`reroll` before the engagement resolves.
 
 ### Simulation
 
-`npm run sim -- --games 100 [--red smart|random] [--black smart|random] [--seed s] [--max-turns 400] [--workers N] [--verbose]`
-plays bot-vs-bot matches (smart vs smart by default) through `viewFor` and checks invariants after every action: card
+`npm run sim -- --games 100 [--red easy|medium|hard|random] [--black easy|medium|hard|random] [--seed s] [--max-turns 400] [--workers N] [--swap] [--verbose]`
+plays bot-vs-bot matches (medium vs medium by default; `smart` = `medium`) through `viewFor` and checks invariants after every action: card
 conservation, no shared hexes, CP within bounds, caps respected, Fortified hexes held by their
-owner, someone always able to act, the bot always able to answer. `simulate(seed)` and
+owner, setup board = setup placements on home edges (at most 6 troops, no Wit), someone always
+able to act, the bot always able to answer. It reports wins by seat and by level
+(`wins by level: <level> <wins>/<seats>`) and decision-time stats (mean, p50, p99, max) per level. `simulate(seed)` and
 `checkInvariants(state)` are exported from `scripts/sim.ts`.
 
 ---
@@ -368,12 +398,15 @@ These are points RULINGS leaves implicit. Each is implemented as written here an
     round. The round ends before any Combat Retreat. If both players lose their last Commander
     together, the attacker wins.
 13. **Concede** is allowed for either player in `setup` and `play`, including mid-engagement
-    (the engagement is discarded). A setup placement already submitted for that round is
-    discarded.
-14. **Setup.** All available cards, Commanders included, wait in `reserve` until both
-    placements are revealed, so Reserve contents never leak a placement. During play,
-    Commanders are never in Reserve. Deploy and Reinforce also reject Commanders explicitly,
-    which matters only for hand-built test states.
+    (the engagement is discarded). Setup placements already made that round are discarded.
+14. **Setup.** All available cards, Commanders included, start the round in `reserve`; each
+    `setupPlace` moves one card onto the board immediately (setup is open). The setup order is
+    derived from the placements so far (`nextSetupPlacer`): starter's Commanders, other player's
+    Commanders, then troops alternating from the starter, with a player who has placed 6 troops
+    or has no eligible card left skipped. Setup ends inside the action that makes the last
+    placement (`setupComplete`, then the starter's `turnStarted`). During play, Commanders are
+    never in Reserve. Deploy and Reinforce also reject Commanders explicitly, which matters only
+    for hand-built test states.
 15. **Ranged versus adjacent**: an Archer adjacent to the target is always an adjacent
     attacker. It counts for Flanking, Surrounded and `archerDefending`, and it can be a
     casualty.

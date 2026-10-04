@@ -34,9 +34,9 @@ const check = (c: any, msg: string) => { if (!c) throw new Error('FAIL: ' + msg)
 async function vsBot() {
   const c = new Client('SmokeBot' + Math.floor(Math.random() * 1e4));
   await c.open(); await c.hello();
-  c.send({ t: 'create', vsBot: true });
+  c.send({ t: 'create', vsBot: true, botLevel: 'hard' });
   const j = await c.next((m) => m.t === 'joined');
-  check(j.gameId && j.seatToken, 'bot game created');
+  check(j.gameId && j.seatToken, 'bot game created (hard)');
   const seat = j.seat;
   let st = await c.next((m) => m.t === 'state');
   let view = st.view; let version = st.version;
@@ -87,10 +87,17 @@ async function pvp() {
   const sa = await a.next((m) => m.t === 'state');
   const sb = await b.next((m) => m.t === 'state');
   let version = Math.max(sa.version, sb.version);
-  const act = chooseBotAction(sa.view, ja.seat)!;
-  check(act, 'setup action chosen: ' + act.type);
-  a.send({ t: 'action', gameId: ja.gameId, seatToken: ja.seatToken, action: act, expectedVersion: sa.version });
+  // Setup is turn-based: exactly one player is up, and each action carries one placement.
+  const upSeat = (pendingDecision(sa.view) as any).players[0];
+  check((pendingDecision(sa.view) as any).kind === 'setup' && (pendingDecision(sa.view) as any).players.length === 1, 'setup decision names one player: ' + upSeat);
+  const [up, down, upJ, downJ] = upSeat === ja.seat ? [a, b, ja, jb] : [b, a, jb, ja];
+  const act = chooseBotAction(sa.view, upSeat)!;
+  check(act && act.type === 'setupPlace' && act.placements.length === 1, 'setup action chosen: one placement');
+  check(chooseBotAction(sa.view, downJ.seat) === null, 'the player not up has no setup action');
+  up.send({ t: 'action', gameId: ja.gameId, seatToken: upJ.seatToken, action: act, expectedVersion: sa.version });
   const ua = await a.next((m) => m.t === 'state'); const ub = await b.next((m) => m.t === 'state');
+  check(ua.view.setup[upSeat].placements.length === 1 && ub.view.setup[upSeat].placements.length === 1, 'placement visible to both immediately');
+  void down;
   check(ua.version > version && ub.version === ua.version, 'pvp action broadcast to both with version bump');
   a.send({ t: 'chat', gameId: ja.gameId, seatToken: ja.seatToken, text: 'hello from smoke' });
   const ch = await b.next((m) => m.t === 'chat' && m.text === 'hello from smoke');

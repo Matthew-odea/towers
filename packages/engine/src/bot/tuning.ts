@@ -34,7 +34,7 @@ export const DEFAULT_TUNING = {
   urgencyEngage: 1.5,
   /** Level-1 candidates expanded one ply further. */
   expand: 6,
-  /** Setup: 1 = strike group prefers the corner home hex on ties, 0 = the inner one. */
+  /** Setup: which side hex the strike group prefers on ties (1 or 0; point-symmetric for both seats either way). */
   setupCorner: 1,
   /** Expected value needed to Press after a stale roll. */
   press: 0.05,

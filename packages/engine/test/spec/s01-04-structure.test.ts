@@ -3,7 +3,7 @@ import {
   createMatch, applyAction, viewFor, pendingDecision, buildArmy, buildAllCards, cardActivates, KIND_NAMES,
   ALL_HEXES, TOWER, HOME_EDGE, CENTRE, neighbors, distance, areAdjacent, mirror,
 } from '../../src/index';
-import { buildState, mustApply, mustReject, c, cs, seq, fight, settle, eventsOf, placeCommanders } from './h';
+import { buildState, mustApply, mustReject, c, cs, seq, fight, settle, eventsOf, placeCommanders, place, completeSetup } from './h';
 
 const KINDS = ['light', 'heavy', 'archer', 'cavalry', 'commander', 'shardbearer', 'wit'];
 
@@ -80,18 +80,21 @@ describe('§1 Match structure', () => {
     expect(Object.keys(r.state.stacks)).toHaveLength(0);
   });
 
-  it('all information is public except the opponent placement during setup', () => {
-    let s = createMatch({ seed: 'pub' });
+  it('all information is public, including setup placements as they happen', () => {
+    let s = createMatch({ seed: 'pub', firstPlayer: 'black' });
     const v = viewFor(s, 'red');
     expect(v.reserve.black).toEqual(s.reserve.black);
     expect(v.destroyed.black).toEqual(s.destroyed.black);
     expect(JSON.stringify(v)).not.toContain('"seed"');
-    s = mustApply(s, placeCommanders(s, 'black')).state;
+    expect(JSON.stringify(v)).not.toContain('"rng"');
+    s = seq(s, ...placeCommanders(s, 'black')).state;
     const rv = viewFor(s, 'red');
-    expect(rv.setup.black.placements).toBeNull();
-    expect(rv.setup.black.submitted).toBe(true);
-    expect(Object.keys(rv.stacks)).toHaveLength(0);
-    expect(viewFor(s, 'black').setup.black.placements).not.toBeNull();
+    expect(rv.setup.black.placements).toEqual([
+      { cardId: c('black:K1'), hex: '1,-2' },
+      { cardId: c('black:K2'), hex: '0,-2' },
+    ]);
+    expect(rv.stacks).toEqual({ '1,-2': [c('black:K1')], '0,-2': [c('black:K2')] });
+    expect(rv.reserve.black).not.toContain(c('black:K1'));
   });
 
   it('dice are two d6 rolled by the engine, within range, and vary', () => {
@@ -200,60 +203,76 @@ describe('§3 Board', () => {
 
 describe('§4 Round setup', () => {
   const fresh = () => createMatch({ seed: 'setup', firstPlayer: 'black' });
-  const home = (p: 'red' | 'black') => HOME_EDGE[p];
 
-  it('Commanders and up to 6 other cards on home-edge hexes; placements are accepted, everything else stays in Reserve', () => {
-    let s = fresh();
-    const extra = ['L2', 'L3', 'L4', 'H5', 'A1', 'S1'].map((x, i) => ({ cardId: c(`red:${x}`), hex: home('red')[i % 3] }));
-    s = mustApply(s, placeCommanders(s, 'red', extra)).state;
-    s = mustApply(s, placeCommanders(s, 'black')).state;
+  it('Commanders first (starter, then the other player), then 6 troops each, alternating from the starter; the rest stays in Reserve', () => {
+    const r = completeSetup(fresh(), {
+      red: [['red:L2', '-2,2'], ['red:L3', '-1,2'], ['red:L4', '0,2'], ['red:H5', '-2,2'], ['red:A1', '-1,2'], ['red:S1', '0,2']],
+    });
+    const placed = eventsOf(r.events, 'setupPlaced');
+    expect(placed.map((e) => `${e.player}:${e.step}`)).toEqual([
+      'black:commander', 'black:commander', 'red:commander', 'red:commander',
+      'black:troop', 'red:troop', 'black:troop', 'red:troop', 'black:troop', 'red:troop',
+      'black:troop', 'red:troop', 'black:troop', 'red:troop', 'black:troop', 'red:troop',
+    ]);
+    expect(placed.filter((e) => e.player === 'red' && e.step === 'troop').map((e) => e.cardId)).toEqual(
+      cs('red:L2', 'red:L3', 'red:L4', 'red:H5', 'red:A1', 'red:S1'),
+    );
+    const s = r.state;
     expect(s.phase).toBe('play');
+    expect(s.turn!.player).toBe('black');
     expect(Object.values(s.stacks).flat().filter((i) => i.startsWith('red-'))).toHaveLength(8);
     expect(s.reserve.red).toHaveLength(27 - 8);
-    expect(s.reserve.black).toHaveLength(25);
+    expect(s.reserve.black).toHaveLength(27 - 8);
   });
 
-  it('both Commanders must be placed, on home-edge hexes', () => {
+  it('Commanders go on home-edge hexes, one per action', () => {
     const s = fresh();
-    mustReject(s, { type: 'setupPlace', player: 'red', placements: [{ cardId: c('red:K1'), hex: '-1,2' }] });
-    mustReject(s, { type: 'setupPlace', player: 'red', placements: [{ cardId: c('red:K1'), hex: '-1,2' }, { cardId: c('red:K2'), hex: '0,0' }] });
-    mustReject(s, { type: 'setupPlace', player: 'red', placements: [{ cardId: c('red:K1'), hex: '-1,2' }, { cardId: c('red:K2'), hex: '1,-2' }] });
+    mustReject(s, place('black', 'black:K1', '0,0'));
+    mustReject(s, place('black', 'black:K1', '-1,2'));
+    mustReject(s, { type: 'setupPlace', player: 'black', placements: [{ cardId: c('black:K1'), hex: '1,-2' }, { cardId: c('black:K2'), hex: '1,-2' }] });
+    mustReject(s, place('black', 'black:L7', '1,-2'));
+    mustApply(s, place('black', 'black:K1', '2,-2'));
   });
 
-  it('more than 6 non-Commander cards is rejected; Wit is never placed at setup', () => {
-    const s = fresh();
-    const seven = ['L2', 'L3', 'L4', 'L5', 'L6', 'L7', 'L8'].map((x) => ({ cardId: c(`red:${x}`), hex: '0,2' }));
-    mustReject(s, placeCommanders(s, 'red', seven));
-    mustReject(s, placeCommanders(s, 'red', [{ cardId: c('red:W'), hex: '0,2' }]));
-    // 6 stacked in one hex is fine
-    mustApply(s, placeCommanders(s, 'red', seven.slice(0, 6)));
+  it('a 7th troop is never asked for; Wit is never placed at setup', () => {
+    let s = seq(fresh(), ...placeCommanders(fresh(), 'black'), ...placeCommanders(fresh(), 'red')).state;
+    mustReject(s, place('black', 'black:W', '0,-2'));
+    // 6 troops stacked in one hex is fine.
+    const r = completeSetup(s, { black: ['L2', 'L3', 'L4', 'L5', 'L6', 'L7', 'L8'].map((x) => [`black:${x}`, '0,-2'] as [string, string]) });
+    expect(r.state.stacks['0,-2']).toEqual([c('black:K2'), ...cs('black:L2', 'black:L3', 'black:L4', 'black:L5', 'black:L6', 'black:L7')]);
+    expect(r.state.reserve.black).toContain(c('black:L8'));
+    expect(r.state.reserve.black).toContain(c('black:W'));
+    s = r.state;
+    expect(s.phase).toBe('play');
   });
 
-  it('cannot place the opponent cards, duplicates, destroyed cards, or submit twice', () => {
-    const s = fresh();
-    mustReject(s, placeCommanders(s, 'red', [{ cardId: c('black:L2'), hex: '0,2' }]));
-    mustReject(s, placeCommanders(s, 'red', [{ cardId: c('red:L2'), hex: '0,2' }, { cardId: c('red:L2'), hex: '-2,2' }]));
-    const t = mustApply(s, placeCommanders(s, 'red')).state;
-    mustReject(t, placeCommanders(t, 'red'));
+  it('cannot place the opponent cards, a card twice, destroyed cards, or out of turn', () => {
+    const s = seq(fresh(), ...placeCommanders(fresh(), 'black'), ...placeCommanders(fresh(), 'red')).state;
+    mustReject(s, place('black', 'red:L2', '0,-2'));
+    mustReject(s, place('red', 'red:L2', '0,2')); // black's setup turn
+    const t = mustApply(s, place('black', 'black:L2', '0,-2')).state;
+    const u = mustApply(t, place('red', 'red:L2', '0,2')).state;
+    mustReject(u, place('black', 'black:L2', '0,-2'));
     // destroyed card in a later round
-    const g = buildState({ board: { '0,0': ['red:L4'] }, destroyed: ['red:L9'] });
-    const r2 = mustApply(g, { type: 'concede', player: 'red' }).state;
-    mustReject(r2, placeCommanders(r2, 'red', [{ cardId: c('red:L9'), hex: '0,2' }]));
+    const g = buildState({ board: { '0,0': ['red:L4'] }, destroyed: ['red:L9'], round1Starter: 'black' });
+    const r2 = mustApply(g, { type: 'concede', player: 'red' }).state; // round 2: red starts
+    const r3 = seq(r2, ...placeCommanders(r2, 'red'), ...placeCommanders(r2, 'black')).state;
+    expect(mustReject(r3, place('red', 'red:L9', '0,2'))).toMatch(/not available/);
   });
 
-  it('placement is hidden until both submit, then revealed together; setup submit announces no hexes', () => {
-    let s = fresh();
-    const r1 = mustApply(s, placeCommanders(s, 'red'));
-    s = r1.state;
-    expect(s.phase).toBe('setup');
-    expect(JSON.stringify(eventsOf(r1.events, 'setupSubmitted')[0])).not.toMatch(/-1,2|hex/);
-    expect(eventsOf(r1.events, 'setupRevealed')).toHaveLength(0);
-    expect(viewFor(s, 'black').setup.red.placements).toBeNull();
-    expect(pendingDecision(s)).toMatchObject({ kind: 'setup', players: ['black'] });
-    const r2 = mustApply(s, placeCommanders(s, 'black'));
-    const rev = eventsOf(r2.events, 'setupRevealed')[0];
-    expect(rev.placements.red).toHaveLength(2);
-    expect(rev.placements.black).toHaveLength(2);
+  it('setup is open: every placement is public and announced with its hex; play starts with setupComplete', () => {
+    const s = fresh();
+    const r1 = mustApply(s, place('black', 'black:K1', '1,-2'));
+    expect(r1.events).toEqual([{ type: 'setupPlaced', player: 'black', cardId: c('black:K1'), hex: '1,-2', step: 'commander' }]);
+    expect(viewFor(r1.state, 'red').setup.black.placements).toEqual([{ cardId: c('black:K1'), hex: '1,-2' }]);
+    expect(viewFor(r1.state, 'red').stacks['1,-2']).toEqual([c('black:K1')]);
+    expect(pendingDecision(r1.state)).toMatchObject({ kind: 'setup', players: ['black'], step: 'commander' });
+    const r2 = completeSetup(r1.state);
+    const done = eventsOf(r2.events, 'setupComplete');
+    expect(done).toHaveLength(1);
+    expect(done[0].placements.red).toHaveLength(8);
+    expect(done[0].placements.black).toHaveLength(8);
+    expect(r2.events[r2.events.length - 1]).toMatchObject({ type: 'turnStarted', player: 'black', turn: 1, cp: 4 });
     expect(r2.state.phase).toBe('play');
   });
 
@@ -265,26 +284,28 @@ describe('§4 Round setup', () => {
       const other = first === 'red' ? 'black' : 'red';
       let s = createMatch({ seed: 'alt', firstPlayer: first });
       expect(s.roundStarter).toBe(first);
-      const play = (st: typeof s) => mustApply(mustApply(st, placeCommanders(st, 'red')).state, placeCommanders(st, 'black')).state;
-      s = play(s);
+      expect(pendingDecision(s)).toMatchObject({ kind: 'setup', player: first });
+      s = completeSetup(s).state;
       expect(s.turn!.player).toBe(first);
       s = mustApply(s, { type: 'concede', player: first }).state; // round 2
       expect(s.roundStarter).toBe(other);
-      s = play(s);
+      expect(pendingDecision(s)).toMatchObject({ kind: 'setup', player: other });
+      s = completeSetup(s).state;
       expect(s.turn!.player).toBe(other);
       s = mustApply(s, { type: 'concede', player: other }).state; // 1-1 -> round 3
       expect(s.round).toBe(3);
       expect(s.roundStarter).toBe(first);
-      s = play(s);
+      s = completeSetup(s).state;
       expect(s.turn!.player).toBe(first);
     }
   });
 
-  it('a player with only Commanders left still plays on', () => {
+  it('a player with only Commanders left still plays on (skips their troop setup turns)', () => {
     const g = buildState({ board: { '0,0': ['black:L4'] }, unlisted: 'destroyed' });
     const s = mustApply(g, { type: 'concede', player: 'black' }).state;
     expect(s.reserve.red.filter((i) => !i.includes('commander'))).toHaveLength(0);
-    const t = mustApply(s, placeCommanders(s, 'red')).state;
-    expect(t.setup.red.submitted).toBe(true);
+    const r = completeSetup(s);
+    expect(eventsOf(r.events, 'setupPlaced').filter((e) => e.player === 'red').map((e) => e.step)).toEqual(['commander', 'commander']);
+    expect(r.state.phase).toBe('play');
   });
 });

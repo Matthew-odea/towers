@@ -1,15 +1,11 @@
 import { describe, expect, test } from 'vitest';
-import { HOME_EDGE, applyAction, createMatch, pendingDecision, type MatchState } from '../src/index';
-import { buildState, c, defend, engage, eventsOf, mustApply, mustReject, run, types } from './helpers';
+import { createMatch, pendingDecision, type MatchState } from '../src/index';
+import { buildState, c, completeSetup, defend, engage, eventsOf, mustApply, mustReject, run, types } from './helpers';
 
 const end = (p: 'red' | 'black') => ({ type: 'endTurn', player: p }) as const;
 
-function setupCommandersOnly(s: MatchState): MatchState {
-  for (const p of ['red', 'black'] as const) {
-    const placements = s.reserve[p].filter((id) => s.cards[id].kind === 'commander').map((cardId) => ({ cardId, hex: HOME_EDGE[p][0] }));
-    s = mustApply(s, { type: 'setupPlace', player: p, placements }).state;
-  }
-  return s;
+function setupDefault(s: MatchState): MatchState {
+  return completeSetup(s).state;
 }
 
 describe('§11.1 Tower victory', () => {
@@ -99,20 +95,20 @@ describe('§11.4 after a round', () => {
   test('next round: new setup, alternate first player, Commanders restored, destroyed stay gone, terrain re-rolled', () => {
     let s = createMatch({ seed: 'rounds', firstPlayer: 'black' });
     const t1 = s.terrain;
-    s = setupCommandersOnly(s);
+    s = setupDefault(s);
     expect(s.turn!.player).toBe('black');
     // Destroy something by hand through a fight is covered elsewhere; here concede and inspect.
     s = mustApply(s, { type: 'concede', player: 'red' }).state;
     expect(s.phase).toBe('setup');
     expect(s.round).toBe(2);
     expect(s.roundStarter).toBe('red');
-    expect(pendingDecision(s)).toEqual({ kind: 'setup', players: ['red', 'black'] });
+    expect(pendingDecision(s)).toMatchObject({ kind: 'setup', players: ['red'], step: 'commander', placed: { red: 0, black: 0 } });
     expect(s.reserve.red).toHaveLength(27);
     expect(s.stacks).toEqual({});
-    expect(s.setup.red).toEqual({ submitted: false, placements: null });
+    expect(s.setup.red).toEqual({ placements: [] });
     // terrain is regenerated (same seed stream, so different from round 1 with overwhelming probability)
     expect(s.terrain).not.toEqual(t1);
-    s = setupCommandersOnly(s);
+    s = setupDefault(s);
     expect(s.turn!.player).toBe('red');
     s = mustApply(s, { type: 'concede', player: 'black' }).state;
     expect(s.round).toBe(3);
@@ -128,7 +124,12 @@ describe('§11.4 after a round', () => {
     expect(n.reserve.black).toContain(c('black:K1'));
     expect(n.reserve.black).toContain(c('black:K2'));
     expect(n.reserve.black).toHaveLength(25);
-    expect(mustReject(n, { type: 'setupPlace', player: 'black', placements: [{ cardId: c('black:K1'), hex: '1,-2' }, { cardId: c('black:K2'), hex: '1,-2' }, { cardId: c('black:L9'), hex: '1,-2' }] })).toMatch(/not available/);
+    // Round 2 is started by black (the round-1 starter was red).
+    let m = mustApply(n, { type: 'setupPlace', player: 'black', placements: [{ cardId: c('black:K1'), hex: '1,-2' }] }).state;
+    m = mustApply(m, { type: 'setupPlace', player: 'black', placements: [{ cardId: c('black:K2'), hex: '1,-2' }] }).state;
+    m = mustApply(m, { type: 'setupPlace', player: 'red', placements: [{ cardId: c('red:K1'), hex: '-1,2' }] }).state;
+    m = mustApply(m, { type: 'setupPlace', player: 'red', placements: [{ cardId: c('red:K2'), hex: '-1,2' }] }).state;
+    expect(mustReject(m, { type: 'setupPlace', player: 'black', placements: [{ cardId: c('black:L9'), hex: '1,-2' }] })).toMatch(/not available/);
   });
 
   test('a player with no non-Commander cards still plays with two Commanders', () => {
@@ -136,7 +137,13 @@ describe('§11.4 after a round', () => {
     const s = buildState({ board: { '0,0': ['black:L2'] }, destroyed: all.map((id) => id), current: 'black' });
     const r = mustApply(s, { type: 'concede', player: 'black' });
     expect(r.state.reserve.red).toEqual([c('red:K1'), c('red:K2')]);
-    expect(applyAction(r.state, { type: 'setupPlace', player: 'red', placements: [{ cardId: c('red:K1'), hex: '-1,2' }, { cardId: c('red:K2'), hex: '0,2' }] }).ok).toBe(true);
+    // Red (no troops) places only its Commanders; Black then places all 6 troops in a row.
+    const done = completeSetup(r.state);
+    const order = eventsOf(done.events, 'setupPlaced').map((e) => `${e.player}:${e.step}`);
+    expect(order.filter((x) => x.startsWith('red'))).toEqual(['red:commander', 'red:commander']);
+    expect(order.filter((x) => x === 'black:troop')).toHaveLength(6);
+    expect(done.state.phase).toBe('play');
+    expect(done.state.reserve.red).toEqual([]);
   });
 
   test('match ends at 2 round wins and is terminal', () => {

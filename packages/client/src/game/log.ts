@@ -66,8 +66,10 @@ export function logLines(e: GameEvent, v: PlayerView): Omit<LogEntry, 'id'>[] {
   switch (e.type) {
     case 'roundStarted':
       return [{ side: null, text: `Round ${e.round}`, rule: 'round' }];
-    case 'setupRevealed':
-      return [{ side: null, text: 'Armies revealed' }];
+    case 'setupPlaced':
+      return [{ side: e.player, text: `${F[e.player]} place ${names(v, [e.cardId])} at ${placeName(v, e.hex)}` }];
+    case 'setupComplete':
+      return [{ side: null, text: 'Armies set' }];
     case 'turnStarted':
       return [{ side: e.player, text: `${F[e.player]} turn ${e.turn}`, rule: 'turn' }];
     case 'towerCount':

@@ -40,6 +40,34 @@
   display: flex;
   gap: var(--sp-3);
 }
+/* "Play the bot" opens into three joined difficulty buttons; the last one chosen is lit. */
+.bot-levels {
+  display: inline-flex;
+  animation: levels-in var(--dur-med) var(--ease-out);
+}
+@keyframes levels-in {
+  from {
+    opacity: 0;
+    transform: translateY(3px);
+  }
+}
+.bot-levels .btn {
+  border-radius: 0;
+  min-width: 74px;
+}
+.bot-levels .btn + .btn {
+  margin-left: -1px;
+}
+.bot-levels .btn:first-child {
+  border-radius: var(--r-sm) 0 0 var(--r-sm);
+}
+.bot-levels .btn:last-child {
+  border-radius: 0 var(--r-sm) var(--r-sm) 0;
+}
+.bot-levels .btn.lit {
+  position: relative;
+  z-index: 1;
+}
 .stats-link,
 .back-link {
   color: var(--parchment-dim);

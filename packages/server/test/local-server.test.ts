@@ -2,7 +2,7 @@ import { afterAll, beforeAll, describe, expect, test } from 'vitest';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { chooseBotAction, type Action, type GameEvent, type PlayerId } from '@towers/engine';
+import { chooseBotAction, pendingDecision, type Action, type GameEvent, type PlayerId } from '@towers/engine';
 import { startLocalServer, type LocalServer } from '../src/local/server';
 import { Client, sleep } from './helpers';
 
@@ -125,24 +125,32 @@ describe('websocket protocol', () => {
     await a.waitFor('state');
     await b.waitFor('state');
 
-    const place = chooseBotAction(a.view!, a.seat!)!;
-    await act(a, place);
+    const up = pendingDecision(a.view!).players[0] as PlayerId;
+    const [u, o] = up === a.seat ? [a, b] : [b, a];
+    await act(u, chooseBotAction(u.view!, u.seat!)!);
     await b.waitFor('state', (s) => s.version === 1);
     await a.waitFor('state', (s) => s.version === 1);
-    expect(a.view!.setup[a.seat!].placements).not.toBeNull();
-    expect(b.view!.setup[a.seat!].submitted).toBe(true);
-    expect(b.view!.setup[a.seat!].placements).toBeNull();
+    // placements are public as they are made
+    expect(b.view!.setup[up].placements).toHaveLength(1);
+    expect(a.view!.setup[up].placements).toHaveLength(1);
     expect(b.view!.viewer).toBe(b.seat);
 
     // stale
-    const from = b.msgs.length;
-    await act(b, chooseBotAction(b.view!, b.seat!)!, 0);
-    expect((await b.waitFor('error', () => true, from)).code).toBe('stale');
-    const resent = await b.waitFor('state', () => true, from);
+    const from = o.msgs.length;
+    await act(o, { type: 'concede', player: o.seat! }, 0);
+    expect((await o.waitFor('error', () => true, from)).code).toBe('stale');
+    const resent = await o.waitFor('state', () => true, from);
     expect(resent.version).toBe(1);
 
-    await act(b, chooseBotAction(b.view!, b.seat!)!);
-    await a.waitFor('state', (s) => s.version === 2);
+    // play the rest of setup, turn by turn
+    for (let i = 0; i < 40 && a.view!.phase === 'setup'; i++) {
+      const who = pendingDecision(a.view!).players[0] as PlayerId;
+      const s = who === a.seat ? a : b;
+      const v = s.version;
+      await act(s, chooseBotAction(s.view!, who)!);
+      await a.waitFor('state', (m) => m.version > v);
+      await b.waitFor('state', (m) => m.version > v);
+    }
     expect(a.view!.phase).toBe('play');
 
     // chat
@@ -154,7 +162,8 @@ describe('websocket protocol', () => {
 
   test('a bot game over websockets reaches the end of round 1; stats persist to the file', async () => {
     const a = await client('Zed');
-    const j = await a.create(true);
+    const j = await a.request({ t: 'create', vsBot: true, botLevel: 'hard' }, 'joined');
+    a.seat = j.seat; a.token = j.seatToken; a.gameId = j.gameId;
     await a.waitFor('state');
     const events: GameEvent[] = [];
     let seen = a.msgs.length;
@@ -194,7 +203,7 @@ describe('websocket protocol', () => {
 
     const st = await a.request({ t: 'stats', username: 'zed' }, 'stats');
     expect(st.stats.matchesPlayed).toBe(1);
-    expect(st.stats.opponents['bot']!.name).toBe('Bot');
+    expect(st.stats.opponents['bot (hard)']!.name).toBe('Bot (Hard)');
     await sleep(400); // debounce
     const file = JSON.parse(fs.readFileSync(path.join(tmp, 'data', 'stats.json'), 'utf8'));
     expect(file['zed'].matchesPlayed).toBe(1);

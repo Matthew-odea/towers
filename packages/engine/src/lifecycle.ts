@@ -49,7 +49,7 @@ export function createMatch(opts: CreateMatchOptions): MatchState {
     destroyed: { red: [], black: [] },
     fortified: {},
     towerCount: { red: 0, black: 0 },
-    setup: { red: { submitted: false, placements: null }, black: { submitted: false, placements: null } },
+    setup: { red: { placements: [] }, black: { placements: [] } },
     turn: null,
     engagement: null,
   };
@@ -75,7 +75,7 @@ export function startRound(ctx: Ctx, round: number): void {
     s.reserve[p] = buildArmy(p)
       .map((c) => c.id)
       .filter((id) => !dead.has(id));
-    s.setup[p] = { submitted: false, placements: null };
+    s.setup[p] = { placements: [] };
   }
   s.terrain = generateTerrain(s);
   emit(ctx, { type: 'roundStarted', round, firstPlayer: s.roundStarter, terrain: { ...s.terrain } });

@@ -4,6 +4,7 @@ import {
   applyAction,
   chooseBotAction,
   createMatch,
+  nextSetupPlacer,
   other,
   pendingDecision,
   testing,
@@ -17,12 +18,14 @@ import type { ChatMessage, ConnectionListener, GameConnection, Presence, StateUp
 
 export interface DevOptions {
   seat?: PlayerId;
-  /** setup (default) | play | engage | defend | reroll | casualties | retreat | press | tower */
+  /** setup (default) | setupTroop | setupOpp | play | engage | defend | reroll | casualties | retreat | press | tower */
   scenario?: string;
   seed?: string;
   /** Delay before each bot step, ms. */
   botDelay?: number;
   names?: Partial<Record<PlayerId, string>>;
+  /** Bot difficulty; when set, the bot seat is shown as "Bot" with its level. */
+  level?: 'easy' | 'medium' | 'hard';
 }
 
 const { buildState, card, cards } = testing;
@@ -35,13 +38,16 @@ function must(s: MatchState, a: Action): MatchState {
 
 /** Board positions are written for Red at the bottom; mirrored when the human plays Black. */
 function scenarioState(name: string, seed: string, seat: PlayerId): MatchState {
-  const base = createMatch({ seed, names: { red: 'Adolin', black: 'Venli' }, firstPlayer: seat });
-  if (name === 'setup') return base;
-  if (name === 'play') {
+  const base = createMatch({ seed, names: { red: 'Adolin', black: 'Venli' }, firstPlayer: name === 'setupOpp' ? other(seat) : seat });
+  if (name === 'setup' || name === 'setupOpp') return base;
+  /** Bots place for both sides until `stop` says to hand over. */
+  const botSetup = (stop: (s: MatchState) => boolean) => {
     let s = base;
-    for (const p of ['red', 'black'] as const) s = must(s, chooseBotAction(s, p)!);
+    for (let n = nextSetupPlacer(s); n && !stop(s); n = nextSetupPlacer(s)) s = must(s, chooseBotAction(s, n.player)!);
     return s;
-  }
+  };
+  if (name === 'setupTroop') return botSetup((s) => nextSetupPlacer(s)?.step === 'troop' && nextSetupPlacer(s)?.player === seat);
+  if (name === 'play') return botSetup(() => false);
   const terrain = { ...base.terrain, '0,0': 'plains' as const, '0,1': 'plains' as const, '1,0': 'forest' as const, '-1,1': 'mountain' as const };
   const me = seat;
   const op = other(seat);
@@ -187,6 +193,7 @@ export function createDevConnection(opts: DevOptions = {}): GameConnection {
     red: { name: state.names.red, connected: true, bot: bot === 'red' },
     black: { name: state.names.black, connected: true, bot: bot === 'black' },
   };
+  if (opts.level) presence[bot] = { ...presence[bot]!, botLevel: opts.level };
   let timer: number | null = null;
   let closed = false;
 
@@ -200,7 +207,7 @@ export function createDevConnection(opts: DevOptions = {}): GameConnection {
     if (closed) return;
     const pd = pendingDecision(state);
     if (!(pd.players as PlayerId[]).includes(bot)) return;
-    const a = chooseBotAction(state, bot);
+    const a = chooseBotAction(state, bot, { level: opts.level ?? 'medium' });
     if (!a) return;
     const r = applyAction(state, a);
     if (!r.ok) {

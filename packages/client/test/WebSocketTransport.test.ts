@@ -38,6 +38,24 @@ describe('WebSocketTransport', () => {
     expect(store.get('towers.seat.g1')).toBe('tok');
   });
 
+  it('sends the bot difficulty when creating a bot game', async () => {
+    const p = WebSocketTransport.create('Ann', 'hard', deps);
+    await flush();
+    const ws = FakeWebSocket.last;
+    ws.open();
+    ws.receive({ t: 'welcome', username: 'Ann' });
+    expect(ws.sent[1]).toEqual({ t: 'create', vsBot: true, botLevel: 'hard' });
+    ws.receive({ t: 'joined', gameId: 'g2', seat: 'red', seatToken: 'tok' });
+    ws.receive({
+      t: 'presence',
+      gameId: 'g2',
+      players: { red: { name: 'Ann', connected: true, bot: false }, black: { name: 'Bot (Hard)', connected: true, bot: true, botLevel: 'hard' } },
+    });
+    const conn = await p;
+    expect(conn.getPresence()?.black).toEqual({ name: 'Bot (Hard)', connected: true, bot: true, botLevel: 'hard' });
+    expect(conn.getPresence()?.red).toEqual({ name: 'Ann', connected: true, bot: false });
+  });
+
   it('joins with a stored token', async () => {
     store.set('towers.seat.abc', 'old');
     const p = WebSocketTransport.join('Bo', 'abc', deps);

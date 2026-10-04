@@ -38,6 +38,8 @@ export interface FanProps {
   marksFor: (id: string) => CardMark[];
   onCardClick?: (id: string) => void;
   onHover: (id: string | null) => void;
+  /** Not my move: the hand sits back, visibly inactive. */
+  idle?: boolean;
   drop?: boolean;
   onDrop?: () => void;
   /** Shown after the last card (my destroyed pile), `trailingW` px wide. */
@@ -45,7 +47,7 @@ export interface FanProps {
   trailingW?: number;
 }
 
-export function ReserveFan({ view, ids, marksFor, onCardClick, onHover, drop, onDrop, trailing, trailingW = 0 }: FanProps) {
+export function ReserveFan({ view, ids, marksFor, onCardClick, onHover, idle, drop, onDrop, trailing, trailingW = 0 }: FanProps) {
   const ref = useRef<HTMLDivElement>(null);
   const [box, setBox] = useState({ w: 800, h: 140 });
   useLayoutEffect(() => {
@@ -67,7 +69,7 @@ export function ReserveFan({ view, ids, marksFor, onCardClick, onHover, drop, on
   const x0 = Math.max(0, (box.w - lay.total - tw) / 2);
   return (
     <div
-      className={`reserve-fan ${drop ? 'reserve-fan--drop' : ''}`}
+      className={`reserve-fan ${drop ? 'reserve-fan--drop' : ''} ${idle ? 'reserve-fan--idle' : ''}`}
       ref={ref}
       onClick={(e) => {
         if (drop && onDrop) {
@@ -82,7 +84,7 @@ export function ReserveFan({ view, ids, marksFor, onCardClick, onHover, drop, on
         return (
           <div
             key={id}
-            className={`fan-card ${marks.includes('selected') ? 'fan-card--up' : ''}`}
+            className={`fan-card ${marks.includes('selected') ? 'fan-card--up' : marks.includes('selectable') ? 'fan-card--able' : ''}`}
             style={{ transform: `translateX(${x0 + lay.x[i]}px)`, zIndex: i }}
           >
             <CardView
