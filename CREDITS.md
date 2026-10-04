@@ -45,3 +45,12 @@ attributions are as recorded on the Coppermind file pages.
 
 The infantry art (`art/infantry/*.svg`), type glyphs (`art/glyphs/*.svg`) and card back
 (`art/card-back.svg`) are original vector work made for this project.
+
+## Landing image
+
+| Image | File | Artist | Source | Coppermind file page | Copyright |
+|---|---|---|---|---|---|
+| Urithiru | `packages/client/public/art/hero/urithiru.webp` | automaticmoon | https://www.instagram.com/p/CiIcjWvK2LY | https://coppermind.net/wiki/File:Urithiru_by_AutomaticMoon.jpg | (c) automaticmoon; Urithiru (c) Dragonsteel Entertainment |
+
+Resized by `scripts/process-site-images.mjs`, which also renders the favicon set from
+`packages/client/public/favicon.svg` (original artwork for this project).

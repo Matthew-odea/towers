@@ -408,6 +408,8 @@
   max-width: 50%;
   background: url('/art/hero/urithiru.webp') right center / cover no-repeat;
   filter: saturate(0.82) brightness(0.86);
-  -webkit-mask-image: linear-gradient(to right, transparent 0, #000 42%);
-  mask-image: linear-gradient(to right, transparent 0, #000 42%);
+  --fade: linear-gradient(to right, transparent 0%, rgba(0, 0, 0, 0.04) 10%, rgba(0, 0, 0, 0.16) 20%,
+    rgba(0, 0, 0, 0.38) 30%, rgba(0, 0, 0, 0.66) 40%, rgba(0, 0, 0, 0.88) 50%, #000 60%);
+  -webkit-mask-image: var(--fade);
+  mask-image: var(--fade);
 }
