@@ -9,7 +9,7 @@ export function ShareOverlay({ link, onDismiss }: { link: string; onDismiss?: ()
       <input className="share-link" readOnly value={link} aria-label="Game link" onFocus={(e) => e.currentTarget.select()} />
       <button
         type="button"
-        className="btn primary"
+        className={`btn primary ${copied ? 'is-copied' : ''}`}
         onClick={async () => { await copyText(link); setCopied(true); setTimeout(() => setCopied(false), 1500); }}
       >
         {copied ? 'Copied' : 'Copy'}

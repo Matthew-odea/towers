@@ -22,12 +22,15 @@ describe('§13 worked examples', () => {
     ]);
   });
 
-  test('1b. same, defender committed 2: the remaining casualty has no real choice', () => {
+  test('1b. same, defender committed 2: both die whatever is picked, so nobody is asked', () => {
     const s = buildState({ board: { '0,1': ['red:L4', 'red:H4', 'red:S1'], '0,0': ['black:L8', 'black:L9', 'black:L10'] }, dice: [2, 2] });
-    let r = run(s, engage('red', '0,0', ['red:L4', 'red:H4', 'red:S1']), defend('black', ['black:L8', 'black:L9']));
-    r = run(r.state, { type: 'chooseCasualties', player: 'red', cardIds: [c('black:L8')] });
+    const r = run(s, engage('red', '0,0', ['red:L4', 'red:H4', 'red:S1']), defend('black', ['black:L8', 'black:L9']));
+    expect(pendingDecision(r.state)?.kind).not.toBe('casualties');
     expect(r.state.destroyed.black.sort()).toEqual([c('black:L8'), c('black:L9')].sort());
     expect(r.state.stacks['0,0']).toEqual([c('black:L10')]);
+    const cas = eventsOf(r.events, 'casualties');
+    expect(cas).toHaveLength(1);
+    expect(cas[0]).toMatchObject({ owner: 'black', chosenBy: 'red', auto: true });
   });
 
   test('1c. same, defender committed 1: only 1 dies', () => {

@@ -2,7 +2,7 @@ import { useLayoutEffect, useRef, useState, type MouseEvent, type ReactNode } fr
 import { ALL_HEXES, TOWER, other, type HexKey, type PlayerId, type PlayerView } from '@towers/engine';
 import { CardView, type CardMark } from './Card';
 import type { ClashView } from './display';
-import { HEX, STAGE_H, STAGE_W, hexCenter, hexCenterTL, hexCorners, polyPoints, type Pt } from './geometry';
+import { HEX, ISLAND_H, ISLAND_W, STAGE_H, STAGE_W, hexCenter, hexCenterTL, hexCorners, polyPoints, type Pt } from './geometry';
 import { TerrainLayer } from './Terrain';
 import { sortCards } from './cardInfo';
 
@@ -17,6 +17,7 @@ export type HexMark =
   | 'reinforce'
   | 'retreat'
   | 'setup'
+  | 'hint'
   | 'source'
   | 'selected'
   | 'own';
@@ -40,10 +41,13 @@ export interface BoardProps {
   onHexHover: (h: HexKey | null) => void;
   onCardHover: (id: string | null) => void;
   onBackground: () => void;
+  /** Dice (and their decisions) for the current engagement, placed on the contested edge. */
+  dice?: ReactNode;
 }
 
-const MINI_W = 46;
-const FAN_W = 54;
+// Board units; on screen they scale with the board (about 58px wide at 1440x900).
+const MINI_W = 54;
+const FAN_W = 62;
 
 interface Placed {
   id: string;
@@ -60,7 +64,7 @@ function layoutStack(ids: string[], hex: HexKey, seat: PlayerId, expanded: boole
   const n = ids.length;
   const mid = (n - 1) / 2;
   if (expanded) {
-    const step = n > 1 ? Math.min(32, 150 / (n - 1)) : 0;
+    const step = n > 1 ? Math.min(36, 160 / (n - 1)) : 0;
     const tilt = n > 1 ? Math.min(5, 24 / n) : 0;
     return ids.map((id, i) => ({
       id,
@@ -72,7 +76,7 @@ function layoutStack(ids: string[], hex: HexKey, seat: PlayerId, expanded: boole
       w: FAN_W,
     }));
   }
-  const step = n > 1 ? Math.min(15, 62 / (n - 1)) : 0;
+  const step = n > 1 ? Math.min(16, 66 / (n - 1)) : 0;
   const tilt = n > 1 ? Math.min(6, 26 / n) : 0;
   return ids.map((id, i) => ({
     id,
@@ -132,7 +136,7 @@ export function Board(props: BoardProps) {
     if (!el) return;
     const ro = new ResizeObserver(() => {
       const r = el.getBoundingClientRect();
-      setScale(Math.max(0.3, Math.min(r.width / STAGE_W, r.height / STAGE_H)));
+      setScale(Math.max(0.3, Math.min(r.width / ISLAND_W, r.height / ISLAND_H)));
     });
     ro.observe(el);
     return () => ro.disconnect();
@@ -149,7 +153,7 @@ export function Board(props: BoardProps) {
     placed.push(...layoutStack(sorted, h, seat, isExp));
     if (!isExp && ids.length > 4) {
       const c = hexCenterTL(h, seat);
-      badges.push({ hex: h, n: ids.length, at: { x: c.x + 38, y: c.y - 16 } });
+      badges.push({ hex: h, n: ids.length, at: { x: c.x + 46, y: c.y - 18 } });
     }
   }
   if (clash) {
@@ -173,6 +177,23 @@ export function Board(props: BoardProps) {
         }
       }
     }
+  }
+
+  // Where the dice land: the midpoint of the contested edge (between the attacking hexes and
+  // the target), in stage units from the stage centre.
+  let diceAt: Pt | null = null;
+  if (clash && props.dice) {
+    const tgt = hexCenter(clash.target, seat);
+    const from = [
+      ...new Set(
+        clash.attackerCards
+          .filter((id) => !clash.rangedArchers.includes(id) || clash.attackerCards.every((x) => clash.rangedArchers.includes(x)))
+          .map((id) => Object.keys(view.stacks).find((h) => view.stacks[h].includes(id)))
+          .filter((h): h is HexKey => !!h && h !== clash.target),
+      ),
+    ].map((h) => hexCenter(h, seat));
+    const src = from.length ? from.reduce((a, b) => ({ x: a.x + b.x / from.length, y: a.y + b.y / from.length }), { x: 0, y: 0 }) : tgt;
+    diceAt = nudge(src, tgt, 0.5);
   }
 
   const flare = new Set(props.flare);
@@ -246,7 +267,7 @@ export function Board(props: BoardProps) {
             <polygon
               key={`h${h}`}
               points={polyPoints(hexCorners(hexCenter(h, seat), HEX))}
-              className={`hit ${hexMarks[h] && hexMarks[h] !== 'source' ? 'hit--live' : ''} ${view.stacks[h] ? 'hit--stack' : ''}`}
+              className={`hit ${hexMarks[h] && hexMarks[h] !== 'source' && hexMarks[h] !== 'hint' ? 'hit--live' : ''} ${view.stacks[h] ? 'hit--stack' : ''}`}
               data-hex={h}
               data-mark={hexMarks[h] ?? undefined}
               onClick={(e) => {
@@ -277,6 +298,7 @@ export function Board(props: BoardProps) {
                 <CardView
                   card={card}
                   width={p.w}
+                  mini
                   marks={marks}
                   onClick={(e) => {
                     e.stopPropagation();
@@ -303,6 +325,15 @@ export function Board(props: BoardProps) {
           })}
         </div>
       </div>
+      {diceAt && (
+        <div
+          className="board-dice"
+          style={{ left: `calc(50% + ${diceAt.x * scale}px)`, top: `calc(50% + ${diceAt.y * scale}px)` }}
+          onClick={(e) => e.stopPropagation()}
+        >
+          {props.dice}
+        </div>
+      )}
     </div>
   );
 }

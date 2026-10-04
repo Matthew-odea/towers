@@ -14,9 +14,12 @@ import {
   MAX_CHAT_CHARS,
   MAX_CHAT_KEPT,
   MAX_MESSAGE_BYTES,
+  BOT_NAME,
   MAX_USERNAME_CHARS,
   emptyStats,
+  normalizeName,
   statsKey,
+  stripInvisible,
   type ClientMessage,
   type ErrorCode,
   type Presence,
@@ -32,8 +35,11 @@ import type {
   StatsStore,
   TestHooks,
 } from './types';
+import type { RateLimiter } from './rate-limit';
 
 export const BOT_STEP_CAP = 500;
+/** Default wall-clock budget for one bot run (the Lambda timeout is 25 s; the broadcast needs headroom). */
+export const BOT_BUDGET_MS = 20_000;
 const CONNECTION_TTL_SECONDS = 3 * 60 * 60;
 const MAX_WRITE_ATTEMPTS = 6;
 const SEATS: PlayerId[] = ['red', 'black'];
@@ -47,6 +53,8 @@ export interface GameServiceDeps {
   log?: (msg: string, err?: unknown) => void;
   /** Deterministic games for e2e tests (local server with TOWERS_TEST=1 only). */
   testHooks?: TestHooks;
+  /** Per-connection message limiter (not applied to pings). */
+  limiter?: RateLimiter;
 }
 
 interface Step {
@@ -91,8 +99,9 @@ function isObject(v: unknown): v is Record<string, unknown> {
 function cleanUsername(v: unknown): string | null {
   if (typeof v !== 'string') return null;
   // eslint-disable-next-line no-control-regex
-  const s = v.replace(/[\u0000-\u001f\u007f]/g, ' ').replace(/\s+/g, ' ').trim();
+  const s = normalizeName(v).replace(/[\u0000-\u001f\u007f]/g, ' ').replace(/\s+/g, ' ').trim();
   if (s.length < 1 || s.length > MAX_USERNAME_CHARS) return null;
+  if (statsKey(s) === statsKey(BOT_NAME)) return null; // reserved for the bot opponent
   return s;
 }
 
@@ -104,9 +113,11 @@ export class GameService {
   private readonly clock: Clock;
   private readonly log: (msg: string, err?: unknown) => void;
   private readonly hooks: TestHooks | undefined;
+  private readonly limiter: RateLimiter | undefined;
 
   constructor(deps: GameServiceDeps) {
     this.hooks = deps.testHooks;
+    this.limiter = deps.limiter;
     this.games = deps.games;
     this.connections = deps.connections;
     this.stats = deps.stats;
@@ -129,9 +140,10 @@ export class GameService {
     if (conn?.gameId) await this.broadcastPresence(conn.gameId);
   }
 
-  async handleMessage(connectionId: string, raw: string): Promise<void> {
+  /** `budgetMs` bounds how long bot play may run for this message (default 20 s). */
+  async handleMessage(connectionId: string, raw: string, budgetMs = BOT_BUDGET_MS): Promise<void> {
     try {
-      await this.dispatch(connectionId, raw);
+      await this.dispatch(connectionId, raw, this.clock.now() + budgetMs);
     } catch (err) {
       this.log('handleMessage failed', err);
       await this.deliver(connectionId, { t: 'error', code: 'internal', message: 'Something went wrong on the server.' });
@@ -140,7 +152,7 @@ export class GameService {
 
   // ---- dispatch --------------------------------------------------------
 
-  private async dispatch(connId: string, raw: unknown): Promise<void> {
+  private async dispatch(connId: string, raw: unknown, deadline: number): Promise<void> {
     if (typeof raw !== 'string') return this.fail(connId, 'bad_message', 'Messages must be text.');
     if (raw.length > MAX_MESSAGE_BYTES || new TextEncoder().encode(raw).length > MAX_MESSAGE_BYTES) {
       return this.fail(connId, 'too_large', 'Message too large.');
@@ -153,23 +165,28 @@ export class GameService {
     }
     if (!isObject(msg) || typeof msg.t !== 'string') return this.fail(connId, 'bad_message', 'Missing message type.');
     const m = msg as unknown as ClientMessage;
+    if (m.t !== 'ping' && this.limiter && !this.limiter.allow(connId)) {
+      return this.fail(connId, 'rate_limited', 'Slow down: too many messages.');
+    }
     switch (m.t) {
       case 'ping':
         return void (await this.deliver(connId, { t: 'pong' }));
       case 'hello':
         return this.onHello(connId, m);
       case 'create':
-        return this.onCreate(connId, m);
+        return this.onCreate(connId, m, deadline);
       case 'join':
-        return this.onJoin(connId, m);
+        return this.onJoin(connId, m, deadline);
       case 'action':
-        return this.onAction(connId, m);
+        return this.onAction(connId, m, deadline);
       case 'chat':
         return this.onChat(connId, m);
       case 'stats':
         return this.onStats(connId, m);
       case 'rematch':
-        return this.onRematch(connId, m);
+        return this.onRematch(connId, m, deadline);
+      case 'continue':
+        return this.onContinue(connId, m, deadline);
       default:
         return this.fail(connId, 'unknown_type', `Unknown message type "${String((msg as { t: unknown }).t).slice(0, 30)}".`);
     }
@@ -181,14 +198,14 @@ export class GameService {
     const username = cleanUsername(m.username);
     if (!username) return this.fail(connId, 'bad_username', `Pick a name of 1 to ${MAX_USERNAME_CHARS} characters.`);
     const conn = (await this.connections.get(connId)) ?? this.freshConn(connId);
-    await this.connections.put({ ...conn, username });
+    await this.connections.put({ ...conn, username, expiresAt: this.connExpiry() });
     await this.deliver(connId, { t: 'welcome', username });
   }
 
-  private async onCreate(connId: string, m: { vsBot?: unknown }): Promise<void> {
+  private async onCreate(connId: string, m: { vsBot?: unknown }, deadline: number): Promise<void> {
     const conn = await this.connections.get(connId);
     if (!conn?.username) return this.fail(connId, 'need_hello', 'Say hello with a username first.');
-    const made = this.newGame(conn.username, m.vsBot === true);
+    const made = this.newGame(conn.username, m.vsBot === true, deadline);
     if (!(await this.games.put(made.rec, null))) {
       // Game ids are random; a collision is effectively impossible.
       return this.fail(connId, 'busy', 'Could not create the game, try again.');
@@ -197,7 +214,7 @@ export class GameService {
   }
 
   /** A fresh game record with `username` in a (random) seat, plus the bot's opening steps. */
-  private newGame(username: string, vsBot: boolean): { rec: GameRecord; seat: PlayerId; token: string; steps: Step[] } {
+  private newGame(username: string, vsBot: boolean, deadline: number): { rec: GameRecord; seat: PlayerId; token: string; steps: Step[] } {
     const now = this.clock.now();
     const seat = this.hooks?.creatorSeat ?? randomSeat();
     const token = randomToken();
@@ -208,7 +225,6 @@ export class GameService {
       vsBot,
       seats: { red: null, black: null },
       state: null,
-      chat: [],
       commits: { red: {}, black: {} },
       statsRecorded: false,
       rematch: null,
@@ -220,7 +236,7 @@ export class GameService {
     if (vsBot) {
       rec.seats[otherSeat(seat)] = { name: 'Bot', token: randomToken(), bot: true };
       rec.state = this.newMatch(rec);
-      steps = this.runBots(rec);
+      steps = this.runBots(rec, deadline);
     }
     return { rec, seat, token, steps };
   }
@@ -231,7 +247,7 @@ export class GameService {
     made: { rec: GameRecord; seat: PlayerId; token: string; steps: Step[] },
   ): Promise<void> {
     const { rec, seat, token, steps } = made;
-    await this.connections.put({ ...conn, gameId: rec.id, seat });
+    await this.connections.put({ ...conn, gameId: rec.id, seat, expiresAt: this.connExpiry() });
     await this.deliver(conn.id, { t: 'joined', gameId: rec.id, seat, seatToken: token });
     if (steps.length) await this.broadcastSteps(rec, steps);
     else if (rec.state) await this.sendCurrent(conn.id, rec.id, token);
@@ -243,7 +259,11 @@ export class GameService {
    * game points at it; the other player's request joins that game. The finished game's
    * connections are told so the opponent can follow.
    */
-  private async onRematch(connId: string, m: { gameId?: unknown; seatToken?: unknown }): Promise<void> {
+  private async onRematch(
+    connId: string,
+    m: { gameId?: unknown; seatToken?: unknown },
+    deadline: number,
+  ): Promise<void> {
     const gameId = this.validId(m.gameId);
     if (!gameId || typeof m.seatToken !== 'string') return this.fail(connId, 'bad_message', 'Missing game id or seat token.');
     const token = m.seatToken;
@@ -255,28 +275,37 @@ export class GameService {
     if (!seat) return this.fail(connId, 'bad_seat', 'That seat token does not match this game.');
     if (old.state?.phase !== 'matchOver') return this.fail(connId, 'not_over', 'The match is not over yet.');
 
-    let next = old.rematch ?? null;
-    if (!next) {
-      const made = this.newGame(conn.username, old.vsBot);
+    let link: { next: string; by: PlayerId | null; token: string | null } | null = old.rematch
+      ? { next: old.rematch, by: old.rematchBy ?? null, token: old.rematchToken ?? null }
+      : null;
+    if (!link) {
+      const made = this.newGame(conn.username, old.vsBot, deadline);
       if (!(await this.games.put(made.rec, null))) return this.fail(connId, 'busy', 'Could not create the game, try again.');
       const linked = await this.mutate(gameId, (rec) => {
-        if (rec.rematch) return { rec, out: rec.rematch, write: false };
-        rec.rematch = made.rec.id;
-        return { rec, out: made.rec.id };
+        const won = !rec.rematch;
+        if (won) {
+          rec.rematch = made.rec.id;
+          rec.rematchBy = seat;
+          rec.rematchToken = made.token;
+        }
+        return { rec, out: { next: rec.rematch!, by: rec.rematchBy ?? null, token: rec.rematchToken ?? null }, write: won };
       });
       if (linked.fail) return this.fail(connId, linked.fail.code, linked.fail.message);
-      if (linked.out === made.rec.id) {
+      if (linked.out.next === made.rec.id) {
         await this.seatCreator(conn, made);
         await this.broadcastTo(gameId, (c) => (c.id === connId ? null : { t: 'rematch', gameId, next: made.rec.id, by: seat }));
         return;
       }
-      // Lost a race with the opponent: join their game (ours is left to expire).
-      next = linked.out;
+      // Lost a race with another request: use their game (ours is left to expire).
+      link = linked.out;
     }
-    return this.onJoin(connId, { gameId: next });
+    // The creator asking again (second tab, reconnect, double click) goes back to their own seat
+    // in the follow-up game instead of taking the opponent's.
+    if (link.by === seat && link.token) return this.onJoin(connId, { gameId: link.next, seatToken: link.token }, deadline);
+    return this.onJoin(connId, { gameId: link.next }, deadline);
   }
 
-  private async onJoin(connId: string, m: { gameId?: unknown; seatToken?: unknown }): Promise<void> {
+  private async onJoin(connId: string, m: { gameId?: unknown; seatToken?: unknown }, deadline: number): Promise<void> {
     const gameId = this.validId(m.gameId);
     if (!gameId) return this.fail(connId, 'bad_message', 'Missing game id.');
     const conn = (await this.connections.get(connId)) ?? this.freshConn(connId);
@@ -284,7 +313,11 @@ export class GameService {
 
     const res = await this.mutate(gameId, (rec) => {
       const claimed = presented ? SEATS.find((s) => rec.seats[s]?.token === presented && !rec.seats[s]?.bot) : undefined;
-      if (claimed) return { rec, out: { seat: claimed, token: presented!, started: false }, write: false };
+      if (claimed) {
+        // A reconnecting player also revives a bot run that stopped early (cap, deadline, crash).
+        const resumed = this.finishBots(rec, deadline);
+        return { rec, out: { seat: claimed, token: presented!, started: false, ...resumed }, write: resumed.steps.length > 0 || resumed.record };
+      }
       if (!conn.username) return failed({ code: 'need_hello', message: 'Say hello with a username first.' });
       const open = SEATS.find((s) => rec.seats[s] === null);
       if (!open) return failed({ code: 'full', message: 'This game already has two players.' });
@@ -296,15 +329,17 @@ export class GameService {
         started = true;
       }
       rec.expiresAt = this.expiry();
-      return { rec, out: { seat: open, token, started } };
+      return { rec, out: { seat: open, token, started, steps: [] as Step[], record: false } };
     });
     if (res.fail) return this.fail(connId, res.fail.code, res.fail.message);
     const { rec, out } = res;
 
-    await this.connections.put({ ...conn, gameId, seat: out.seat });
+    await this.connections.put({ ...conn, gameId, seat: out.seat, expiresAt: this.connExpiry() });
     await this.deliver(connId, { t: 'joined', gameId, seat: out.seat, seatToken: out.token });
     if (rec.state) {
-      if (out.started) {
+      if (out.steps.length) {
+        await this.broadcastSteps(rec, out.steps);
+      } else if (out.started) {
         await this.broadcastSteps(rec, [{ state: rec.state, events: [], version: rec.version }]);
       } else {
         await this.deliver(connId, {
@@ -316,13 +351,14 @@ export class GameService {
         });
       }
     }
-    for (const c of rec.chat) {
+    for (const c of await this.games.listChat(gameId, MAX_CHAT_KEPT)) {
       await this.deliver(connId, { t: 'chat', gameId, from: c.from, name: c.name, text: c.text, ts: c.ts });
     }
     await this.broadcastPresence(gameId, rec);
+    if (out.record) await this.recordStats(rec);
   }
 
-  private async onAction(connId: string, m: Partial<Extract<ClientMessage, { t: 'action' }>>): Promise<void> {
+  private async onAction(connId: string, m: Partial<Extract<ClientMessage, { t: 'action' }>>, deadline: number): Promise<void> {
     const gameId = this.validId(m.gameId);
     if (!gameId || typeof m.seatToken !== 'string') return this.fail(connId, 'bad_message', 'Missing game id or seat token.');
     if (!isObject(m.action) || typeof (m.action as { type?: unknown }).type !== 'string') {
@@ -349,14 +385,10 @@ export class GameService {
       rec.version += 1;
       const steps: Step[] = [{ state: r.state, events: r.events, version: rec.version }];
       this.countCommits(rec, r.events);
-      steps.push(...this.runBots(rec));
-      let record = false;
-      if (rec.state.phase === 'matchOver' && !rec.statsRecorded) {
-        rec.statsRecorded = true;
-        record = true;
-      }
+      const more = this.finishBots(rec, deadline);
+      steps.push(...more.steps);
       rec.expiresAt = this.expiry();
-      return { rec, out: { steps, record, seat } };
+      return { rec, out: { steps, record: more.record, seat } };
     });
 
     if (res.fail) {
@@ -368,26 +400,42 @@ export class GameService {
     if (res.out.record) await this.recordStats(res.rec);
   }
 
+  /** Runs the bot again if it is to move (an earlier run hit the cap or deadline, or was cut short). */
+  private async onContinue(connId: string, m: { gameId?: unknown; seatToken?: unknown }, deadline: number): Promise<void> {
+    const gameId = this.validId(m.gameId);
+    if (!gameId || typeof m.seatToken !== 'string') return this.fail(connId, 'bad_message', 'Missing game id or seat token.');
+    const token = m.seatToken;
+    const res = await this.mutate(gameId, (rec) => {
+      const seat = SEATS.find((s) => rec.seats[s]?.token === token && !rec.seats[s]?.bot);
+      if (!seat) return failed({ code: 'bad_seat', message: 'That seat token does not match this game.' });
+      const r = this.finishBots(rec, deadline);
+      if (!r.steps.length && !r.record) return { rec, out: r, write: false };
+      rec.expiresAt = this.expiry();
+      return { rec, out: r };
+    });
+    if (res.fail) return this.fail(connId, res.fail.code, res.fail.message);
+    if (res.out.steps.length) await this.broadcastSteps(res.rec, res.out.steps);
+    else await this.sendCurrent(connId, gameId, token);
+    if (res.out.record) await this.recordStats(res.rec);
+  }
+
   private async onChat(connId: string, m: { gameId?: unknown; seatToken?: unknown; text?: unknown }): Promise<void> {
     const gameId = this.validId(m.gameId);
     if (!gameId || typeof m.seatToken !== 'string') return this.fail(connId, 'bad_message', 'Missing game id or seat token.');
     if (typeof m.text !== 'string') return this.fail(connId, 'bad_chat', 'Chat needs text.');
     // eslint-disable-next-line no-control-regex
-    const text = m.text.replace(/[\u0000-\u001f\u007f]/g, ' ').trim();
+    const text = stripInvisible(m.text).replace(/[\u0000-\u001f\u007f]/g, ' ').trim();
     if (!text) return this.fail(connId, 'bad_chat', 'Empty message.');
     if (text.length > MAX_CHAT_CHARS) return this.fail(connId, 'bad_chat', `Messages are limited to ${MAX_CHAT_CHARS} characters.`);
     const token = m.seatToken;
-    const ts = this.clock.now();
-    const res = await this.mutate(gameId, (rec) => {
-      const seat = SEATS.find((s) => rec.seats[s]?.token === token && !rec.seats[s]?.bot);
-      if (!seat) return failed({ code: 'bad_seat', message: 'That seat token does not match this game.' });
-      const entry = { from: seat, name: rec.seats[seat]!.name, text, ts };
-      rec.chat.push(entry);
-      if (rec.chat.length > MAX_CHAT_KEPT) rec.chat = rec.chat.slice(-MAX_CHAT_KEPT);
-      return { rec, out: entry };
-    });
-    if (res.fail) return this.fail(connId, res.fail.code, res.fail.message);
-    await this.broadcastTo(gameId, () => ({ t: 'chat', gameId, from: res.out.from, name: res.out.name, text, ts }));
+    // Chat is stored as its own item: it never rewrites the game record or bumps its revision.
+    const rec = await this.games.get(gameId);
+    if (!rec || rec.expiresAt * 1000 < this.clock.now()) return this.fail(connId, 'not_found', 'No such game (it may have expired).');
+    const seat = SEATS.find((s) => rec.seats[s]?.token === token && !rec.seats[s]?.bot);
+    if (!seat) return this.fail(connId, 'bad_seat', 'That seat token does not match this game.');
+    const entry = { from: seat, name: rec.seats[seat]!.name, text, ts: this.clock.now() };
+    await this.games.addChat(gameId, entry, rec.expiresAt);
+    await this.broadcastTo(gameId, () => ({ t: 'chat', gameId, from: entry.from, name: entry.name, text, ts: entry.ts }));
   }
 
   private async onStats(connId: string, m: { username?: unknown }): Promise<void> {
@@ -410,12 +458,31 @@ export class GameService {
     return state;
   }
 
-  /** Applies bot actions until a human decision is pending. Mutates rec. */
-  private runBots(rec: GameRecord): Step[] {
+  /** Runs the bot, then claims the one-time stats recording if that ended the match. Mutates rec. */
+  private finishBots(rec: GameRecord, deadline: number): { steps: Step[]; record: boolean } {
+    const steps = this.runBots(rec, deadline);
+    let record = false;
+    if (rec.state?.phase === 'matchOver' && !rec.statsRecorded && rec.seats.red && rec.seats.black) {
+      rec.statsRecorded = true;
+      record = true;
+    }
+    return { steps, record };
+  }
+
+  /**
+   * Applies bot actions until a human decision is pending, the step cap is hit or `deadline`
+   * (epoch ms) passes. Stopping early leaves the bot to move; a `continue` message or a rejoin
+   * resumes it. Mutates rec.
+   */
+  private runBots(rec: GameRecord, deadline: number): Step[] {
     const steps: Step[] = [];
     const botSeat = SEATS.find((s) => rec.seats[s]?.bot);
     if (!botSeat || !rec.state) return steps;
     while (steps.length < BOT_STEP_CAP) {
+      if (this.clock.now() >= deadline) {
+        this.log(`bot run deadline hit in game ${rec.id}`);
+        break;
+      }
       const dec = pendingDecision(rec.state);
       if (!(dec.players as PlayerId[]).includes(botSeat)) break;
       const action = chooseBotAction(rec.state, botSeat);
@@ -501,6 +568,10 @@ export class GameService {
     return failed({ code: 'busy', message: 'The game is busy, try again.' });
   }
 
+  private connExpiry(): number {
+    return Math.floor(this.clock.now() / 1000) + CONNECTION_TTL_SECONDS;
+  }
+
   private expiry(): number {
     return Math.floor(this.clock.now() / 1000) + GAME_TTL_DAYS * 24 * 60 * 60;
   }
@@ -510,7 +581,7 @@ export class GameService {
   }
 
   private freshConn(id: string): ConnectionRecord {
-    return { id, expiresAt: Math.floor(this.clock.now() / 1000) + CONNECTION_TTL_SECONDS };
+    return { id, expiresAt: this.connExpiry() };
   }
 
   // ---- output helpers --------------------------------------------------

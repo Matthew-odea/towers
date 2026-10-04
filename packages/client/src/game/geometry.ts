@@ -9,6 +9,17 @@ const SQRT3 = Math.sqrt(3);
 export const STAGE_W = Math.round(SQRT3 * HEX * 5 + HEX * 1.1);
 export const STAGE_H = Math.round(HEX * 8 + HEX * 0.9);
 
+/** Cliff drop under each hex (drawn by the terrain layer). */
+export const CLIFF = 18;
+
+/**
+ * The island's real extent: five hexes across (plus room for fanned stacks on the side columns)
+ * and five rows down plus the cliff. The board is scaled so this, not the padded stage, fills
+ * the arena.
+ */
+export const ISLAND_W = Math.round(SQRT3 * HEX * 5 + HEX * 0.3);
+export const ISLAND_H = Math.round(HEX * 1.5 * 4 + HEX * 2 + CLIFF + 10);
+
 export interface Pt {
   x: number;
   y: number;

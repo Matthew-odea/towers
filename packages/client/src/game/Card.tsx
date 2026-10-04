@@ -1,6 +1,6 @@
 import { memo, useState, type CSSProperties, type MouseEvent, type ReactNode } from 'react';
 import type { Card as CardT, CardKind } from '@towers/engine';
-import { ART, isInfantry, plateName, reliability } from './cardInfo';
+import { ART, isInfantry, plateLabel, plateName, reliability } from './cardInfo';
 
 export type CardMark = 'selectable' | 'selected' | 'flare' | 'lit' | 'dying' | 'dim' | 'ash' | 'locked' | 'focus';
 
@@ -17,6 +17,8 @@ export interface CardProps {
   onEnter?: () => void;
   onLeave?: () => void;
   title?: string;
+  /** Force the compact layout (no plate) regardless of width, e.g. cards on the board. */
+  mini?: boolean;
 }
 
 export function Glyph({ kind, className }: { kind: CardKind; className?: string }) {
@@ -32,26 +34,29 @@ function Portrait({ card }: { card: CardT }) {
       </div>
     );
   }
+  // data-char lets the stylesheet grade each portrait into one family (see .card-art in game.css).
   return (
-    <div className="card-art">
+    <div className="card-art card-art--portrait" data-char={card.character}>
       <img src={ART.portrait(card.character)} alt="" draggable={false} loading="lazy" onError={() => setFailed(true)} />
+      <span className="card-grain" aria-hidden />
     </div>
   );
 }
 
+/** Reliability: six sphere slots in a 2x3 block, `n` of them infused (n = 2d6 ways to roll the rank). */
 function Spheres({ n }: { n: number }) {
   return (
     <div className="card-spheres" data-n={n} aria-hidden>
-      {Array.from({ length: n }, (_, i) => (
-        <i key={i} />
+      {Array.from({ length: 6 }, (_, i) => (
+        <i key={i} className={i < n ? 'on' : undefined} />
       ))}
     </div>
   );
 }
 
-function CardImpl({ card, width, faceDown, marks, badge, className, style, onClick, onEnter, onLeave, title }: CardProps) {
+function CardImpl({ card, width, faceDown, marks, badge, className, style, onClick, onEnter, onLeave, title, mini: forceMini }: CardProps) {
   const ms = marks == null ? [] : Array.isArray(marks) ? marks : [marks];
-  const mini = width < 56;
+  const mini = forceMini ?? width < 56;
   const cls = [
     'card',
     `card--${card.owner}`,
@@ -73,6 +78,7 @@ function CardImpl({ card, width, faceDown, marks, badge, className, style, onCli
     );
   }
   const inf = isInfantry(card);
+  const plate = !inf && !mini ? plateLabel(plateName(card), width) : null;
   return (
     <div
       className={cls}
@@ -86,16 +92,18 @@ function CardImpl({ card, width, faceDown, marks, badge, className, style, onCli
       <div className="card-face">
         {inf ? (
           <>
-            <div className="card-art card-art--infantry" style={{ ['--art' as string]: `url(${ART.infantry(card.kind as 'light' | 'heavy')})` }} />
+            <div className="card-art card-art--infantry" style={{ ['--art' as string]: `url(${ART.infantry(card.kind as 'light' | 'heavy')})` }}>
+              <span className="card-grain" aria-hidden />
+            </div>
             <div className={`card-rank numeral ${card.rank >= 10 ? 'card-rank--wide' : ''}`}>{card.rank}</div>
-            {!mini && <Spheres n={reliability(card)} />}
+            <Spheres n={reliability(card)} />
           </>
         ) : (
           <>
             <Portrait card={card} />
-            {!mini && (
+            {plate && (
               <div className="card-plate">
-                <span>{plateName(card)}</span>
+                <span style={{ fontSize: plate.size }}>{plate.text}</span>
               </div>
             )}
           </>

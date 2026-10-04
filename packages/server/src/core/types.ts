@@ -24,12 +24,14 @@ export interface GameRecord {
   seats: Record<PlayerId, SeatRecord | null>;
   /** null until both seats are filled. */
   state: MatchState | null;
-  chat: ChatRecord[];
   /** Per-seat character commit counts accumulated from engagement events. */
   commits: Record<PlayerId, Record<string, number>>;
   statsRecorded: boolean;
   /** Id of the follow-up game once a player asked for a rematch. */
   rematch?: string | null;
+  /** Seat of the player who created the rematch game, and their seat token in that new game. */
+  rematchBy?: PlayerId | null;
+  rematchToken?: string | null;
   createdAt: number;
   /** Epoch seconds (DynamoDB TTL). */
   expiresAt: number;
@@ -48,6 +50,10 @@ export interface GameStore {
   get(id: string): Promise<GameRecord | null>;
   /** Writes `rec` only if the stored rev equals `expectedRev` (null = must not exist). Returns false on conflict. */
   put(rec: GameRecord, expectedRev: number | null): Promise<boolean>;
+  /** Chat lives outside the optimistically-locked game record so it never contends with actions. */
+  addChat(gameId: string, entry: ChatRecord, expiresAt: number): Promise<void>;
+  /** The most recent `limit` chat entries, oldest first. */
+  listChat(gameId: string, limit: number): Promise<ChatRecord[]>;
 }
 
 export interface ConnectionStore {

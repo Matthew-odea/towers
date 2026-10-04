@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { pendingDecision, ALL_HEXES, TOWER } from '../../src/index';
-import { buildState, mustApply, mustReject, c, cs, seq, fight, settle, eventsOf, pend, placeCommanders, last } from './h';
+import { buildState, mustApply, mustReject, c, cs, seq, fight, settle, eventsOf, pend, placeCommanders, last, resolvedEv } from './h';
 
 const end = (s: any, p: 'red' | 'black') => mustApply(s, { type: 'endTurn', player: p });
 
@@ -72,6 +72,17 @@ describe('§11.1 Tower victory', () => {
     expect(n.towerCount.black).toBe(0);
   });
 
+  it('count resets when a Combat Retreat takes your last cards off the enemy Tower', () => {
+    const s = buildState({ current: 'red', board: { '-1,1': ['red:L5'], '-1,2': ['black:L9', 'black:L8'] }, towerCount: { black: 2 }, dice: [2, 3] });
+    let r = fight(s, { target: '-1,2', atk: ['red:L5'], def: ['black:L9'] });
+    expect(pend(r.state)).toMatchObject({ kind: 'retreat', player: 'black', hexes: ['0,2'] });
+    expect(r.state.towerCount.black).toBe(2); // L8 still holds the Tower before the retreat
+    r = seq(r, { type: 'retreat', player: 'black', to: '0,2' });
+    expect(r.state.stacks['0,2']).toEqual(cs('black:L8'));
+    expect(r.state.towerCount.black).toBe(0);
+    expect(eventsOf(r.events, 'towerCount').some((e) => e.player === 'black' && e.count === 0)).toBe(true);
+  });
+
   it('the count survives while some of your cards remain on the Tower', () => {
     const s = buildState({ current: 'black', board: { '-1,2': ['black:L5', 'black:L6'], '0,0': ['red:L7'] }, towerCount: { black: 2 } });
     const r = mustApply(s, { type: 'move', player: 'black', cardIds: cs('black:L5'), from: '-1,2', path: ['-1,1'] });
@@ -115,6 +126,19 @@ describe('§11.2 Decapitation', () => {
     const s = buildState({ board: { '0,1': ['red:L4'], '0,0': ['black:K2'] }, destroyed: ['black:K1'], dice: [2, 2] });
     const r = settle(fight(s, { target: '0,0', atk: ['red:L4'] }));
     expect(eventsOf(r.events, 'roundWon')[0]).toMatchObject({ winner: 'red', reason: 'decapitation' });
+  });
+
+  it('Decapitation is checked before Combat Retreat: the round ends and no retreat is offered', () => {
+    const s = buildState({ board: { '0,1': ['red:L5'], '0,0': ['black:K1', 'black:L8'] }, destroyed: ['black:K2'], dice: [2, 3] });
+    const r = settle(fight(s, { target: '0,0', atk: ['red:L5'], def: ['black:K1'] }), {
+      retreat: () => {
+        throw new Error('no Combat Retreat should be offered after Decapitation');
+      },
+    });
+    expect(resolvedEv(r.events)[0]).toMatchObject({ outcome: 'attacker' });
+    expect(eventsOf(r.events, 'roundWon')[0]).toMatchObject({ winner: 'red', reason: 'decapitation' });
+    expect(eventsOf(r.events, 'retreated')).toHaveLength(0);
+    expect(r.state.round).toBe(2);
   });
 
   it('Commanders in Reserve (not destroyed) never trigger it', () => {

@@ -391,6 +391,9 @@ function buildCasualtySteps(s: PublicState, e: Engagement, r: EngagementResult):
     return [{ chooser: winner, owner: loser, count: n, eligible: pool, reason: 'advantage' }];
   }
   if (r.shardstrike[winSide]) {
+    // Every eligible card dies whoever picks: one auto-resolving step, so nobody is asked a
+    // question with a single answer (the winner is still recorded as the chooser).
+    if (n === pool.length) return [{ chooser: winner, owner: loser, count: n, eligible: pool, reason: 'shardstrike' }];
     const first = Math.min(1, n);
     return [
       { chooser: winner, owner: loser, count: first, eligible: pool, reason: 'shardstrike' },

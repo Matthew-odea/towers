@@ -1,9 +1,8 @@
 // Drawn terrain: a floating hex island with plains, forest, mountains and two Towers.
 import { memo, type ReactNode } from 'react';
 import { TOWER, type HexKey, type PlayerId, type Terrain as TerrainT } from '@towers/engine';
-import { HEX, STAGE_H, STAGE_W, hexCenter, hexCorners, hexPath, hexRand, paintOrder, polyPoints, type Pt } from './geometry';
+import { CLIFF, HEX, STAGE_H, STAGE_W, hexCenter, hexCorners, hexPath, hexRand, paintOrder, polyPoints, type Pt } from './geometry';
 
-const CLIFF = 18;
 
 function scatter(rand: () => number, n: number, radius: number, avoid?: (p: Pt) => boolean): Pt[] {
   const out: Pt[] = [];
@@ -151,7 +150,8 @@ function decoration(t: TerrainT, h: HexKey): ReactNode {
   }
 }
 
-function TerrainImpl({ terrain, seat }: { terrain: Record<HexKey, TerrainT>; seat: PlayerId }) {
+/** `terrain: null` draws the bare island (stone faces, the two Towers): the lobby preview. */
+function TerrainImpl({ terrain, seat }: { terrain: Record<HexKey, TerrainT> | null; seat: PlayerId }) {
   const order = paintOrder(seat);
   return (
     <svg className="board-terrain" viewBox={`${-STAGE_W / 2} ${-STAGE_H / 2} ${STAGE_W} ${STAGE_H}`} aria-hidden>
@@ -167,6 +167,10 @@ function TerrainImpl({ terrain, seat }: { terrain: Record<HexKey, TerrainT>; sea
         <radialGradient id="tg-mountain" cx="0.42" cy="0.36" r="0.75">
           <stop offset="0" stopColor="#555864" />
           <stop offset="1" stopColor="var(--mountain-a)" />
+        </radialGradient>
+        <radialGradient id="tg-blank" cx="0.42" cy="0.36" r="0.75">
+          <stop offset="0" stopColor="#3d4148" />
+          <stop offset="1" stopColor="#24272d" />
         </radialGradient>
         <radialGradient id="tg-tower" cx="0.45" cy="0.4" r="0.75">
           <stop offset="0" stopColor="var(--tower-b)" />
@@ -214,7 +218,8 @@ function TerrainImpl({ terrain, seat }: { terrain: Record<HexKey, TerrainT>; sea
       {/* faces */}
       {order.map((h) => {
         const c = hexCenter(h, seat);
-        return <path key={h} d={hexPath(c, HEX)} fill={`url(#tg-${terrain[h]})`} className="tr-face" />;
+        const t = terrain ? terrain[h] : h === TOWER.red || h === TOWER.black ? 'tower' : 'blank';
+        return <path key={h} d={hexPath(c, HEX)} fill={`url(#tg-${t})`} className="tr-face" />;
       })}
 
       {/* texture */}
@@ -228,7 +233,7 @@ function TerrainImpl({ terrain, seat }: { terrain: Record<HexKey, TerrainT>; sea
         const c = hexCenter(h, seat);
         return (
           <g key={h} transform={`translate(${c.x} ${c.y})`} clipPath={undefined}>
-            {decoration(terrain[h], h)}
+            {terrain ? decoration(terrain[h], h) : h === TOWER.red || h === TOWER.black ? decoration('tower', h) : null}
           </g>
         );
       })}

@@ -34,6 +34,7 @@ export function ChatDock({ conn }: { conn: GameConnection }) {
             className="field chat-input"
             value={text}
             maxLength={300}
+            placeholder="Say something"
             aria-label="Message"
             onChange={(e) => setText(e.target.value)}
             onKeyDown={(e) => {

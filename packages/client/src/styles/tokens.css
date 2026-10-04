@@ -7,7 +7,7 @@
   --font-display: 'Gloock', 'Iowan Old Style', 'Palatino Linotype', Georgia, serif;
   --font-ui: 'Alegreya Sans', 'Gill Sans', 'Optima', 'Segoe UI', sans-serif;
 
-  --fs-xs: 11px;
+  --fs-xs: 12px;   /* the smallest UI text anywhere */
   --fs-sm: 13px;
   --fs-md: 15px;
   --fs-lg: 19px;
@@ -34,7 +34,7 @@
 
   --parchment: #ddd3bd;
   --parchment-dim: #b4ab96;
-  --parchment-faint: #807a6c;
+  --parchment-faint: #9a9484; /* >= 4.5:1 on slate-700 and darker */
   --ink: #15171b;
 
   /* engraved metal (frames, rules, numerals) */
@@ -134,6 +134,10 @@
   --ease-out: cubic-bezier(0.2, 0.8, 0.2, 1);
   --ease-in-out: cubic-bezier(0.65, 0, 0.35, 1);
   --ease-settle: cubic-bezier(0.3, 1.35, 0.5, 1);
+
+  /* ---- Game layout ------------------------------------------------------------------- */
+  --rail-top: 58px;
+  --rail-bottom: clamp(138px, 19vh, 176px);
 
   /* ---- Layers -------------------------------------------------------------------------- */
   --z-board: 1;

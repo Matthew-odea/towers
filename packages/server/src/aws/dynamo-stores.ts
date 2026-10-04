@@ -7,11 +7,12 @@ import {
   type DynamoDBDocumentClient,
 } from '@aws-sdk/lib-dynamodb';
 import type { PlayerStats } from '../core/protocol';
-import type { ConnectionRecord, ConnectionStore, GameRecord, GameStore, StatsStore } from '../core/types';
+import type { ChatRecord, ConnectionRecord, ConnectionStore, GameRecord, GameStore, StatsStore } from '../core/types';
 
 /**
  * Single-table layout (keys: pk, sk; TTL attribute: expiresAt, epoch seconds):
  *   GAME#<id>      / STATE         the game: { rev, json }
+ *   GAME#<id>      / CHAT#<ts>#<n> one chat message (not part of STATE, so chat never contends with actions)
  *   GAME#<id>      / CONN#<connId> membership row, used to list a game's connections
  *   CONN#<connId>  / META          the connection: { username, gameId, seat }
  *   STATS#<key>    / STATS         per-username stats: { rev, json }
@@ -47,6 +48,32 @@ export class DynamoGameStore implements GameStore {
       throw e;
     }
   }
+
+  async addChat(gameId: string, entry: ChatRecord, expiresAt: number): Promise<void> {
+    const n = Math.floor(Math.random() * 0x10000).toString(16).padStart(4, '0');
+    await this.db.send(
+      new PutCommand({
+        TableName: this.table,
+        Item: { pk: `GAME#${gameId}`, sk: `CHAT#${String(entry.ts).padStart(15, '0')}#${n}`, ...entry, expiresAt },
+      }),
+    );
+  }
+
+  async listChat(gameId: string, limit: number): Promise<ChatRecord[]> {
+    const r = await this.db.send(
+      new QueryCommand({
+        TableName: this.table,
+        KeyConditionExpression: 'pk = :p AND begins_with(sk, :c)',
+        ExpressionAttributeValues: { ':p': `GAME#${gameId}`, ':c': 'CHAT#' },
+        ScanIndexForward: false,
+        Limit: limit,
+        ConsistentRead: true,
+      }),
+    );
+    return (r.Items ?? [])
+      .map((it) => ({ from: it.from as ChatRecord['from'], name: it.name as string, text: it.text as string, ts: it.ts as number }))
+      .reverse();
+  }
 }
 
 export class DynamoConnectionStore implements ConnectionStore {
@@ -56,7 +83,8 @@ export class DynamoConnectionStore implements ConnectionStore {
     const r = await this.db.send(
       new GetCommand({ TableName: this.table, Key: { pk: `CONN#${id}`, sk: 'META' }, ConsistentRead: true }),
     );
-    return r.Item ? toConn(id, r.Item) : null;
+    // TTL deletion can lag by up to 48 h, so expired rows are ignored explicitly.
+    return r.Item && isLive(r.Item) ? toConn(id, r.Item) : null;
   }
 
   async put(conn: ConnectionRecord): Promise<void> {
@@ -114,7 +142,8 @@ export class DynamoConnectionStore implements ConnectionStore {
         new QueryCommand({
           TableName: this.table,
           KeyConditionExpression: 'pk = :p AND begins_with(sk, :c)',
-          ExpressionAttributeValues: { ':p': `GAME#${gameId}`, ':c': 'CONN#' },
+          ExpressionAttributeValues: { ':p': `GAME#${gameId}`, ':c': 'CONN#', ':now': nowSeconds() },
+          FilterExpression: 'expiresAt > :now',
           ConsistentRead: true,
           ExclusiveStartKey: key,
         }),
@@ -164,6 +193,9 @@ export class DynamoStatsStore implements StatsStore {
     throw new Error('stats update contention');
   }
 }
+
+const nowSeconds = () => Math.floor(Date.now() / 1000);
+const isLive = (it: Record<string, unknown>) => ((it.expiresAt as number) ?? 0) > nowSeconds();
 
 function toConn(id: string, it: Record<string, unknown>): ConnectionRecord {
   return {

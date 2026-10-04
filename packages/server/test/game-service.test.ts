@@ -3,6 +3,7 @@ import { chooseBotAction, pendingDecision, type Action, type PlayerId, type Play
 import { GameService } from '../src/core/game-service';
 import { MemoryConnectionStore, MemoryGameStore, MemoryStatsStore } from '../src/core/memory-stores';
 import { MAX_CHAT_KEPT, type ServerMessage } from '../src/core/protocol';
+import { TokenBucketLimiter } from '../src/core/rate-limit';
 import { Bus } from './helpers';
 
 let bus: Bus;
@@ -431,10 +432,31 @@ describe('rematch', () => {
     expect(jb.seat).not.toBe(ja.seat);
     expect(view('a2').phase).toBe('setup');
     expect(view('b2').names[jb.seat]).toBe('Bo');
-    // a third request finds the game full
-    await connect('c2', 'Cy');
+    // the creator asking again (second tab) goes back to their own seat, never the opponent's
+    await connect('c2', 'Ann');
     await send('c2', { t: 'rematch', gameId, seatToken: a.token });
-    expect(lastError('c2')?.code).toBe('full');
+    const jc = bus.last('c2', 'joined')!;
+    expect(jc).toMatchObject({ gameId: ja.gameId, seat: ja.seat, seatToken: ja.seatToken });
+    expect(lastError('c2')).toBeUndefined();
+    // a repeat request from the opponent finds the game full; it never takes a third seat
+    await connect('d2', 'Bo');
+    await send('d2', { t: 'rematch', gameId, seatToken: b.token });
+    expect(lastError('d2')?.code).toBe('full');
+  });
+
+  test('double request before the opponent answers keeps the second seat open', async () => {
+    const { a, b, gameId } = await finished();
+    await connect('a2', 'Ann');
+    await send('a2', { t: 'rematch', gameId, seatToken: a.token });
+    const ja = bus.last('a2', 'joined')!;
+    await connect('a3', 'Ann');
+    await send('a3', { t: 'rematch', gameId, seatToken: a.token });
+    expect(bus.last('a3', 'joined')).toMatchObject({ gameId: ja.gameId, seat: ja.seat, seatToken: ja.seatToken });
+    await connect('b2', 'Bo');
+    await send('b2', { t: 'rematch', gameId, seatToken: b.token });
+    const jb = bus.last('b2', 'joined')!;
+    expect(jb.gameId).toBe(ja.gameId);
+    expect(jb.seat).not.toBe(ja.seat);
   });
 
   test('a bot game rematch starts a new bot game straight away', async () => {
@@ -480,5 +502,70 @@ describe('test hooks', () => {
       terrains.push(v.terrain);
     }
     expect(terrains[0]).toEqual(terrains[1]);
+  });
+});
+
+describe('robustness', () => {
+  test('chat does not bump the game revision or rewrite the record', async () => {
+    const { a, gameId } = await twoPlayers();
+    const before = (await games.get(gameId))!.rev;
+    for (let i = 0; i < 5; i++) await send(a.c, { t: 'chat', gameId, seatToken: a.token, text: `m${i}` });
+    expect((await games.get(gameId))!.rev).toBe(before);
+  });
+
+  test('invisible characters are stripped; the bot name is reserved', async () => {
+    await connect('a');
+    await send('a', { t: 'hello', username: 'Bo\u202Eb\u200B' });
+    expect(bus.last('a', 'welcome')!.username).toBe('Bob');
+    await send('a', { t: 'hello', username: ' ＢＯＴ ' });
+    expect(lastError('a')?.code).toBe('bad_username');
+  });
+
+  test('rate limiter rejects bursts but never pings', async () => {
+    const l = new GameService({
+      games: new MemoryGameStore(),
+      connections: new MemoryConnectionStore(),
+      stats: new MemoryStatsStore(),
+      out: bus,
+      clock: { now: () => now },
+      limiter: new TokenBucketLimiter(3, 1, () => now),
+    });
+    await l.handleConnect('r');
+    for (let i = 0; i < 5; i++) await l.handleMessage('r', JSON.stringify({ t: 'stats', username: 'x' }));
+    expect(bus.ofType('r', 'error').filter((e) => e.code === 'rate_limited')).toHaveLength(2);
+    bus.clear('r');
+    await l.handleMessage('r', JSON.stringify({ t: 'ping' }));
+    expect(bus.last('r', 'pong')).toBeTruthy();
+    now += 2000;
+    await l.handleMessage('r', JSON.stringify({ t: 'stats', username: 'x' }));
+    expect(bus.last('r', 'stats')).toBeTruthy();
+  });
+
+  test('a stalled bot run resumes on continue and on rejoin', async () => {
+    await connect('h', 'Hal');
+    // zero budget: the bot cannot move during create, so it is left to move
+    await svc.handleMessage('h', JSON.stringify({ t: 'create', vsBot: true }), 0);
+    const j = bus.last('h', 'joined')!;
+    const g = { c: 'h', seat: j.seat, token: j.seatToken, gameId: j.gameId };
+    const rec0 = (await games.get(g.gameId))!;
+    expect(rec0.version).toBe(0);
+    // bad token refused
+    await send('h', { t: 'continue', gameId: g.gameId, seatToken: 'nope' });
+    expect(lastError('h')?.code).toBe('bad_seat');
+    await send('h', { t: 'continue', gameId: g.gameId, seatToken: g.token });
+    const after = (await games.get(g.gameId))!;
+    expect(after.version).toBeGreaterThan(0);
+    expect(bus.last('h', 'state')!.version).toBe(after.version);
+    // nothing pending now: continue is a harmless resend
+    await send('h', { t: 'continue', gameId: g.gameId, seatToken: g.token });
+    expect((await games.get(g.gameId))!.version).toBe(after.version);
+
+    // rejoin path
+    await connect('h2', 'Hal');
+    await svc.handleMessage('h2', JSON.stringify({ t: 'create', vsBot: true }), 0);
+    const j2 = bus.last('h2', 'joined')!;
+    await connect('h3', 'Hal');
+    await send('h3', { t: 'join', gameId: j2.gameId, seatToken: j2.seatToken });
+    expect((await games.get(j2.gameId))!.version).toBeGreaterThan(0);
   });
 });

@@ -24,6 +24,14 @@ export function plateName(c: Card): string {
   return KIND_NAMES[c.kind];
 }
 
+/** Plate text: at least 10px; names that would not fit at that size are cut to four letters. */
+export function plateLabel(name: string, width: number): { text: string; size: number } {
+  const size = Math.max(10, Math.min(15, width * 0.11));
+  const room = width * 0.74;
+  const fits = name.length * size * 0.56 <= room;
+  return { text: fits ? name : name.slice(0, 4), size };
+}
+
 /** Short label for the log and tooltips: "Dalinar", "Light 7". */
 export function shortName(c: Card): string {
   if (isInfantry(c)) return `${c.kind === 'light' ? 'Light' : 'Heavy'} ${c.rank}`;

@@ -164,11 +164,8 @@ data "aws_iam_policy_document" "lambda" {
     actions = [
       "dynamodb:GetItem",
       "dynamodb:PutItem",
-      "dynamodb:UpdateItem",
       "dynamodb:DeleteItem",
       "dynamodb:Query",
-      "dynamodb:BatchGetItem",
-      "dynamodb:BatchWriteItem",
     ]
     resources = [aws_dynamodb_table.main.arn]
   }
@@ -193,15 +190,18 @@ resource "aws_iam_role_policy" "lambda" {
 }
 
 resource "aws_lambda_function" "server" {
-  function_name    = "${local.prefix}-server"
-  role             = aws_iam_role.lambda.arn
-  runtime          = "nodejs22.x"
-  architectures    = ["arm64"]
-  memory_size      = 512
-  timeout          = 29
-  handler          = "index.handler"
-  filename         = "${path.module}/build/lambda.zip"
-  source_code_hash = filebase64sha256("${path.module}/build/lambda.zip")
+  function_name = "${local.prefix}-server"
+  role          = aws_iam_role.lambda.arn
+  runtime       = "nodejs22.x"
+  architectures = ["arm64"]
+  memory_size   = 512
+  # Below the 29 s API Gateway integration timeout, so Lambda can log before the gateway gives up.
+  timeout = 25
+  handler = "index.handler"
+  # Caps spend and blast radius (-1 = unreserved). The account must keep at least 10 unreserved.
+  reserved_concurrent_executions = var.lambda_reserved_concurrency
+  filename                       = "${path.module}/build/lambda.zip"
+  source_code_hash               = filebase64sha256("${path.module}/build/lambda.zip")
 
   environment {
     variables = {
@@ -251,8 +251,9 @@ resource "aws_apigatewayv2_stage" "prod" {
   auto_deploy = true
 
   default_route_settings {
-    throttling_rate_limit  = 20
-    throttling_burst_limit = 50
+    # Stage-wide, not per client; per-connection limiting is done in the server.
+    throttling_rate_limit  = 100
+    throttling_burst_limit = 200
   }
 
   depends_on = [
@@ -268,4 +269,31 @@ resource "aws_lambda_permission" "apigw" {
   function_name = aws_lambda_function.server.function_name
   principal     = "apigateway.amazonaws.com"
   source_arn    = "${aws_apigatewayv2_api.ws.execution_arn}/*/*"
+}
+
+# --------------------------------------------------------------------- budget
+
+resource "aws_budgets_budget" "monthly" {
+  count        = var.budget_email == "" ? 0 : 1
+  name         = "${local.prefix}-monthly"
+  budget_type  = "COST"
+  limit_amount = tostring(var.monthly_budget_usd)
+  limit_unit   = "USD"
+  time_unit    = "MONTHLY"
+
+  notification {
+    comparison_operator        = "GREATER_THAN"
+    threshold                  = 80
+    threshold_type             = "PERCENTAGE"
+    notification_type          = "ACTUAL"
+    subscriber_email_addresses = [var.budget_email]
+  }
+
+  notification {
+    comparison_operator        = "GREATER_THAN"
+    threshold                  = 100
+    threshold_type             = "PERCENTAGE"
+    notification_type          = "FORECASTED"
+    subscriber_email_addresses = [var.budget_email]
+  }
 }

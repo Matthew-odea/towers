@@ -4,6 +4,7 @@ import { CardView, type CardMark } from './Card';
 import { FACTION, activationText, longName, sortCards } from './cardInfo';
 import type { Banner } from './display';
 import type { LogEntry } from './log';
+import { fanLayout } from './layout';
 
 // ---- CP spheres --------------------------------------------------------------------------
 
@@ -39,10 +40,12 @@ export interface FanProps {
   onHover: (id: string | null) => void;
   drop?: boolean;
   onDrop?: () => void;
-  children?: ReactNode;
+  /** Shown after the last card (my destroyed pile), `trailingW` px wide. */
+  trailing?: ReactNode;
+  trailingW?: number;
 }
 
-export function ReserveFan({ view, ids, marksFor, onCardClick, onHover, drop, onDrop }: FanProps) {
+export function ReserveFan({ view, ids, marksFor, onCardClick, onHover, drop, onDrop, trailing, trailingW = 0 }: FanProps) {
   const ref = useRef<HTMLDivElement>(null);
   const [box, setBox] = useState({ w: 800, h: 140 });
   useLayoutEffect(() => {
@@ -54,10 +57,14 @@ export function ReserveFan({ view, ids, marksFor, onCardClick, onHover, drop, on
   }, []);
   const sorted = sortCards(view, ids);
   const w = Math.max(56, Math.min(88, (box.h - 26) / 1.4));
-  const n = sorted.length;
-  const step = n > 1 ? Math.min(w + 8, (box.w - w - 16) / (n - 1)) : 0;
-  const total = (n - 1) * step + w;
-  const x0 = (box.w - total) / 2;
+  const tw = trailing ? trailingW + 16 : 0;
+  const lay = fanLayout(
+    sorted.map((id) => view.cards[id].kind),
+    box.w,
+    w,
+    tw,
+  );
+  const x0 = Math.max(0, (box.w - lay.total - tw) / 2);
   return (
     <div
       className={`reserve-fan ${drop ? 'reserve-fan--drop' : ''}`}
@@ -76,7 +83,7 @@ export function ReserveFan({ view, ids, marksFor, onCardClick, onHover, drop, on
           <div
             key={id}
             className={`fan-card ${marks.includes('selected') ? 'fan-card--up' : ''}`}
-            style={{ transform: `translateX(${x0 + i * step}px)`, zIndex: i }}
+            style={{ transform: `translateX(${x0 + lay.x[i]}px)`, zIndex: i }}
           >
             <CardView
               card={view.cards[id]}
@@ -96,14 +103,22 @@ export function ReserveFan({ view, ids, marksFor, onCardClick, onHover, drop, on
           </div>
         );
       })}
+      {trailing && (
+        <div className="fan-trailing" style={{ transform: `translateX(${x0 + lay.total + 16}px)` }}>
+          {trailing}
+        </div>
+      )}
     </div>
   );
 }
 
 // ---- Opponent reserve: thin row of backs -------------------------------------------------
 
+/** Back slivers 6px apart, ending in one whole card back. Hover to see the count by type. */
 export function BackRow({ view, ids, onHover }: { view: PlayerView; ids: string[]; onHover: (on: boolean) => void }) {
-  const step = Math.min(13, 360 / Math.max(1, ids.length));
+  if (!ids.length) return null;
+  const step = 6;
+  const last = ids[ids.length - 1];
   return (
     <div
       className="back-row"
@@ -112,27 +127,31 @@ export function BackRow({ view, ids, onHover }: { view: PlayerView; ids: string[
       onMouseLeave={() => onHover(false)}
       aria-label={`${ids.length} cards in Reserve`}
     >
-      {ids.map((id, i) => (
-        <div key={id} className="back-row-card" style={{ transform: `translateX(${i * step}px)` }}>
-          <CardView card={view.cards[id]} width={30} faceDown />
-        </div>
+      {ids.slice(0, -1).map((id, i) => (
+        <i key={id} className="back-sliver" style={{ left: i * step }} />
       ))}
+      <div className="back-row-card" style={{ left: (ids.length - 1) * step }}>
+        <CardView card={view.cards[last]} width={30} faceDown />
+      </div>
     </div>
   );
 }
 
 // ---- Destroyed pile ------------------------------------------------------------------------
 
-export function Pile({ view, ids, onHover, side }: { view: PlayerView; ids: string[]; onHover: (on: boolean) => void; side: PlayerId }) {
-  if (!ids.length) return <div className="pile pile--empty" />;
-  const top = ids.slice(-3);
+export const PILE_W = 52;
+
+export function Pile({ view, ids, onHover, side, width = 36 }: { view: PlayerView; ids: string[]; onHover: (on: boolean) => void; side: PlayerId; width?: number }) {
+  if (!ids.length) return null;
+  const top = ids[ids.length - 1];
   return (
-    <div className={`pile pile--${side}`} onMouseEnter={() => onHover(true)} onMouseLeave={() => onHover(false)} aria-label={`${ids.length} destroyed`}>
-      {top.map((id, i) => (
-        <div key={id} className="pile-card" style={{ transform: `translate(${i * 3}px, ${-i * 2}px) rotate(${(i - 1) * 5}deg)` }}>
-          <CardView card={view.cards[id]} width={38} marks="ash" />
-        </div>
-      ))}
+    <div
+      className={`pile pile--${side} ${ids.length > 1 ? 'pile--stack' : ''}`}
+      onMouseEnter={() => onHover(true)}
+      onMouseLeave={() => onHover(false)}
+      aria-label={`${ids.length} destroyed`}
+    >
+      <CardView card={view.cards[top]} width={width} mini marks="ash" />
       <span className="pile-count numeral">{ids.length}</span>
     </div>
   );
@@ -178,7 +197,7 @@ export function LogDrawer({ open, entries, onToggle }: { open: boolean; entries:
   const list = useRef<HTMLOListElement>(null);
   useLayoutEffect(() => {
     if (open) list.current?.scrollTo({ top: list.current.scrollHeight });
-  }, [open, entries.length]);
+  }, [open, entries]);
   return (
     <>
       <button type="button" className={`log-toggle ${open ? 'is-open' : ''}`} onClick={onToggle} aria-expanded={open}>
@@ -199,7 +218,20 @@ export function LogDrawer({ open, entries, onToggle }: { open: boolean; entries:
 
 // ---- Round / match banner ----------------------------------------------------------------
 
-export function BannerView({ banner, seat, onSkip, onRematch }: { banner: Banner; seat: PlayerId; onSkip: () => void; onRematch?: () => void }) {
+export function BannerView({
+  banner,
+  seat,
+  holdMs,
+  onSkip,
+  onRematch,
+}: {
+  banner: Banner;
+  seat: PlayerId;
+  /** How long a round banner stays before play continues on its own. */
+  holdMs: number;
+  onSkip: () => void;
+  onRematch?: () => void;
+}) {
   const opp: PlayerId = seat === 'red' ? 'black' : 'red';
   const line =
     banner.kind === 'match' ? `${FACTION[banner.winner]} win` : `${FACTION[banner.winner]} take the round`;
@@ -208,10 +240,25 @@ export function BannerView({ banner, seat, onSkip, onRematch }: { banner: Banner
       <div className="banner-inner">
         <h2 className="banner-line">{line}</h2>
         <div className="banner-pips">
+          <span className={`banner-side banner-side--${opp} caps`}>{FACTION[opp]}</span>
           <RoundPips wins={banner.roundWins[opp]} side={opp} />
           <span className="banner-sep" />
           <RoundPips wins={banner.roundWins[seat]} side={seat} />
+          <span className={`banner-side banner-side--${seat} caps`}>{FACTION[seat]}</span>
         </div>
+        {banner.kind === 'round' && (
+          <button
+            type="button"
+            className="banner-continue"
+            style={{ ['--hold' as string]: `${holdMs}ms` }}
+            onClick={(e) => {
+              e.stopPropagation();
+              onSkip();
+            }}
+          >
+            Continue
+          </button>
+        )}
         {banner.kind === 'match' && onRematch && (
           <button type="button" className="btn lit banner-rematch" onClick={onRematch}>
             Rematch
@@ -221,5 +268,3 @@ export function BannerView({ banner, seat, onSkip, onRematch }: { banner: Banner
     </div>
   );
 }
-
-

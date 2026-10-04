@@ -360,7 +360,9 @@ These are points RULINGS leaves implicit. Each is implemented as written here an
 11. **Casualty order and timing.** The pick steps run in order and every card is destroyed only
     after the last pick, so Decapitation is checked once on the final result. In a win with
     Shardstrike (and no Advantage-vs-Disadvantage), the winner picks 1 first and the loser then
-    picks the rest from what remains. In a Bloodbath the defender's casualty is decided first,
+    picks the rest from what remains. If those casualties take every eligible card, there is no
+    choice to make: they resolve automatically as one step (`chosenBy` the winner, `auto: true`)
+    and nobody is asked. In a Bloodbath the defender's casualty is decided first,
     then the attacker's.
 12. **Decapitation** means both of a player's Commanders are in their `destroyed` pile this
     round. The round ends before any Combat Retreat. If both players lose their last Commander

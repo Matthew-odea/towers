@@ -150,9 +150,13 @@ a:hover {
 .btn:active:not(:disabled) {
   transform: translateY(1px);
 }
+/* Disabled: flat and quiet but still legible (>= 4.5:1). Only enabled .primary/.lit buttons glow. */
 .btn:disabled {
-  color: var(--slate-400);
-  border-color: rgba(216, 201, 159, 0.1);
+  color: var(--parchment-faint);
+  background: var(--slate-800);
+  border: 1px dashed rgba(216, 201, 159, 0.26);
+  box-shadow: none;
+  text-shadow: none;
 }
 .btn.primary:not(:disabled),
 .btn.lit:not(:disabled) {

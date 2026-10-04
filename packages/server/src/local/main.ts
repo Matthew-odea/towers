@@ -33,6 +33,8 @@ function testHooks(): TestHooks | undefined {
 const hooks = testHooks();
 const srv = await startLocalServer({
   port,
+  // Loopback only by default: test-mode servers use fixed seeds and must not be LAN-exposed.
+  host: process.env.TOWERS_HOST || '127.0.0.1',
   statsFile: path.join(repoRoot, '.data', hooks ? 'stats.e2e.json' : 'stats.json'),
   clientDir: process.env.TOWERS_CLIENT_DIR ?? path.join(repoRoot, 'packages', 'client', 'dist'),
   testHooks: hooks,

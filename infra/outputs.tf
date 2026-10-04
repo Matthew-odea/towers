@@ -17,3 +17,7 @@ output "distribution_id" {
 output "table_name" {
   value = aws_dynamodb_table.main.name
 }
+
+output "region" {
+  value = var.region
+}

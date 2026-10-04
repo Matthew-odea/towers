@@ -16,6 +16,11 @@ export type ClientMessage =
   | { t: 'stats'; username: string }
   /** After the match is over: start (or join) the follow-up game. Replies like create/join. */
   | { t: 'rematch'; gameId: string; seatToken: string }
+  /**
+   * Resume bot play. Send it when the view shows the bot to move (for example after a reconnect or
+   * a stalled bot run); a no-op if nothing is pending. Replies with the current state.
+   */
+  | { t: 'continue'; gameId: string; seatToken: string }
   | { t: 'ping' };
 
 export interface PresenceEntry {
@@ -60,6 +65,7 @@ export type ErrorCode =
   | 'bad_chat'
   | 'not_over'
   | 'busy'
+  | 'rate_limited'
   | 'internal';
 
 export type ServerMessage =
@@ -74,8 +80,24 @@ export type ServerMessage =
   | { t: 'pong' }
   | { t: 'error'; code: ErrorCode; message: string };
 
+/** Zero-width characters and bidi controls: never shown, only used to spoof or hide text. */
+// eslint-disable-next-line no-misleading-character-class
+const INVISIBLE = /[\u200B-\u200F\u202A-\u202E\u2060-\u2064\u2066-\u2069\uFEFF]/g;
+
+export function stripInvisible(s: string): string {
+  return s.replace(INVISIBLE, '');
+}
+
+/** Display-name cleanup: NFKC, no invisible characters. */
+export function normalizeName(s: string): string {
+  return stripInvisible(s.normalize('NFKC'));
+}
+
+/** The name the bot opponent goes by; humans may not use it. */
+export const BOT_NAME = 'Bot';
+
 export function statsKey(username: string): string {
-  return username.trim().toLowerCase();
+  return normalizeName(username).trim().toLowerCase();
 }
 
 export function emptyStats(username: string): PlayerStats {

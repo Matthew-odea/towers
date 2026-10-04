@@ -1,5 +1,5 @@
 import type { PlayerStats } from './protocol';
-import type { ConnectionRecord, ConnectionStore, GameRecord, GameStore, StatsStore } from './types';
+import type { ChatRecord, ConnectionRecord, ConnectionStore, GameRecord, GameStore, StatsStore } from './types';
 
 const clone = <T>(v: T): T => structuredClone(v);
 
@@ -15,9 +15,21 @@ export class MemoryGameStore implements GameStore {
     this.map.set(rec.id, clone(rec));
     return true;
   }
+  private readonly chats = new Map<string, ChatRecord[]>();
+  async addChat(gameId: string, entry: ChatRecord) {
+    const list = this.chats.get(gameId) ?? [];
+    list.push(clone(entry));
+    this.chats.set(gameId, list);
+  }
+  async listChat(gameId: string, limit: number) {
+    return (this.chats.get(gameId) ?? []).slice(-limit).map(clone);
+  }
   /** Drops expired games; call occasionally. */
   sweep(nowMs: number) {
-    for (const [k, v] of this.map) if (v.expiresAt * 1000 < nowMs) this.map.delete(k);
+    for (const [k, v] of this.map) if (v.expiresAt * 1000 < nowMs) {
+        this.map.delete(k);
+        this.chats.delete(k);
+      }
   }
   get size() {
     return this.map.size;

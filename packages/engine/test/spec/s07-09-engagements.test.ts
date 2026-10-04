@@ -596,6 +596,37 @@ describe('§8 Dice and rerolls', () => {
       expect(pend(r.state).kind).not.toBe('reroll');
     });
 
+    describe('when the Disadvantaged side activates only through its Advantage 11/12 bonus (§7.4, §8.2)', () => {
+      // Black is Fortified (Advantage) and defends with an Archer next to an adjacent attacker
+      // (Disadvantage); A1 itself does not activate on these dice.
+      const bonus = (dice: number[]) =>
+        fight(buildState({ board: { '0,1': ['red:L2'], '0,0': ['black:A1', 'black:L9'] }, fortified: ['0,0'], dice }), {
+          target: '0,0',
+          atk: ['red:L2'],
+          def: ['black:A1'],
+        });
+
+      it('5+6: the bonus counts as activating, so the opponent is offered the forced reroll', () => {
+        let r = bonus([5, 6]);
+        expect(started(r.events).modifiers.defender).toEqual({ advantage: ['fortified'], disadvantage: ['archerDefending'] });
+        expect(pend(r.state)).toMatchObject({ kind: 'reroll', player: 'red', options: [{ source: 'disadvantage' }] });
+        r = seq(r, { type: 'passReroll', player: 'red' });
+        // confirms the activation really was the bonus alone
+        expect(resolvedEv(r.events)[0]).toMatchObject({
+          activating: { attacker: [], defender: [] },
+          advantageBonus: { defender: true },
+          outcome: 'defender',
+        });
+      });
+
+      it('5+4: no bonus and no card activating, so the forced reroll is not offered', () => {
+        const r = bonus([5, 4]);
+        expect(eventsOf(r.events, 'rerolled')).toHaveLength(0);
+        expect(resolvedEv(r.events)[0]).toMatchObject({ activating: { attacker: [], defender: [] }, advantageBonus: { defender: false } });
+        expect(pend(r.state).kind).toBe('pressOrBreak');
+      });
+    });
+
     it('the Disadvantaged side cannot use it itself', () => {
       const r = go([1, 5, 3]);
       mustReject(r.state, { type: 'reroll', player: 'black', source: 'disadvantage', die: 0 });

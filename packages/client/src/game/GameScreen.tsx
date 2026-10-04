@@ -28,9 +28,12 @@ import {
 import type { GameConnection } from '../net/types';
 import { Board, type HexMark } from './Board';
 import type { CardMark } from './Card';
-import { Clash, type ClashPrompt } from './Clash';
+import { Clash, ClashDice, type ClashPrompt } from './Clash';
 import { FACTION } from './cardInfo';
-import { BackRow, BannerView, Inspector, LogDrawer, Pile, ReserveFan, RoundPips, Spheres, type Inspect } from './Hud';
+import { BackRow, BannerView, Inspector, LogDrawer, PILE_W, Pile, ReserveFan, RoundPips, Spheres, type Inspect } from './Hud';
+import { ROUND_BANNER_MS } from './display';
+import { capHint } from './hints';
+import { TerrainLayer } from './Terrain';
 import { useFeed } from './useFeed';
 import './game.css';
 
@@ -186,7 +189,16 @@ function Screen({ conn, onRematch }: { conn: GameConnection; onRematch?: () => v
     [live, engageMode, seat],
   );
 
-  if (!live || !d || !pd) return <div className="game game--empty storm-field" data-phase="none" />;
+  if (!live || !d || !pd)
+    return (
+      <div className="game game--empty storm-field" data-phase="none">
+        {/* Before the match exists (waiting for the opponent) the terrain is not dealt yet: show the
+            bare island and its two Towers, dimmed. */}
+        <div className="board-preview" aria-hidden>
+          <TerrainLayer terrain={null} seat={seat} />
+        </div>
+      </div>
+    );
 
   const view = d.view;
   const setupPhase = live.phase === 'setup' && view.phase === 'setup';
@@ -316,6 +328,8 @@ function Screen({ conn, onRematch }: { conn: GameConnection; onRematch?: () => v
 
   if (setupPhase && !submitted) {
     if (setupSel.length) for (const h of HOME_EDGE[seat]) hexMarks[h] = 'setup';
+    // First look at setup: the three home hexes breathe once so a new player knows where cards go.
+    else if (setupOthers === 0) for (const h of HOME_EDGE[seat]) hexMarks[h] = 'hint';
     for (const id of setupSel) addMark(id, 'selected');
   } else if (turnPd && q) {
     if (mode.kind === 'idle') {
@@ -518,13 +532,13 @@ function Screen({ conn, onRematch }: { conn: GameConnection; onRematch?: () => v
     const kind = live.cards[id].kind;
     if (setupPhase) {
       if (submitted) return ['dim'];
-      if (kind === 'wit') return ['dim'];
       return setupSel.includes(id) ? ['selected'] : [];
     }
     if (!turnPd || !q) return [];
     if (mode.kind === 'deploy') return q.deploy.cards.includes(id) ? [picks.includes(id) ? 'selected' : 'selectable'] : ['dim'];
     if (mode.kind === 'reinforce') return reserveDeployable(live, seat).includes(id) ? [picks.includes(id) ? 'selected' : 'selectable'] : ['dim'];
     if (mode.kind === 'spawn') return kind === 'wit' ? ['selected'] : ['dim'];
+    if (mode.kind === 'idle' && kind === 'wit' && q.spawn.length) return ['selectable'];
     return [];
   };
 
@@ -642,6 +656,7 @@ function Screen({ conn, onRematch }: { conn: GameConnection; onRematch?: () => v
   );
 
   const showClash = !!(d.clash || prompt?.kind === 'commit');
+  const hint = turnPd && !e ? capHint(turnPd.cp, turnPd.capRemaining, !!sel) : null;
 
   return (
     <div
@@ -668,20 +683,21 @@ function Screen({ conn, onRematch }: { conn: GameConnection; onRematch?: () => v
             <Spheres lit={oppCp} side={opp} mine={false} small />
           )}
         </div>
-        <div className="rail-centre">
+        <div className="opp-reserve">
           <BackRow
             view={view}
             ids={view.reserve[opp]}
             onHover={(on) => setHoverGroup(on ? { kind: 'cards', ids: view.reserve[opp], label: 'Reserve' } : null)}
           />
-        </div>
-        <div className="rail-end">
-          <Pile
-            view={view}
-            ids={view.destroyed[opp]}
-            side={opp}
-            onHover={(on) => setHoverGroup(on ? { kind: 'cards', ids: view.destroyed[opp], label: 'Fallen' } : null)}
-          />
+          <div className="opp-pile">
+            <Pile
+              view={view}
+              ids={view.destroyed[opp]}
+              side={opp}
+              width={30}
+              onHover={(on) => setHoverGroup(on ? { kind: 'cards', ids: view.destroyed[opp], label: 'Fallen' } : null)}
+            />
+          </div>
         </div>
       </header>
 
@@ -707,6 +723,7 @@ function Screen({ conn, onRematch }: { conn: GameConnection; onRematch?: () => v
             if (mode.kind !== 'idle' && mode.kind !== 'engage') setMode(IDLE);
             setSetupSel([]);
           }}
+          dice={d.clash ? <ClashDice view={view} seat={seat} clash={d.clash} prompt={prompt} waiting={oppDeciding} /> : undefined}
         />
         <Inspector view={boardView} target={inspect} />
         {showClash && (
@@ -721,20 +738,12 @@ function Screen({ conn, onRematch }: { conn: GameConnection; onRematch?: () => v
             onHoverCard={setHoverCard}
           />
         )}
-        {d.banner && <BannerView banner={d.banner} seat={seat} onSkip={feed.skip} onRematch={onRematch} />}
+        {d.banner && <BannerView banner={d.banner} seat={seat} holdMs={ROUND_BANNER_MS} onSkip={feed.skip} onRematch={onRematch} />}
         {error && <div className="game-error">{error}</div>}
       </main>
 
       {/* ---- bottom: me ---- */}
       <footer className="rail rail--bottom">
-        <div className="rail-start">
-          <Pile
-            view={view}
-            ids={view.destroyed[seat]}
-            side={seat}
-            onHover={(on) => setHoverGroup(on ? { kind: 'cards', ids: view.destroyed[seat], label: 'Fallen' } : null)}
-          />
-        </div>
         <ReserveFan
           view={boardView}
           ids={reserveIds}
@@ -743,6 +752,17 @@ function Screen({ conn, onRematch }: { conn: GameConnection; onRematch?: () => v
           onHover={setHoverCard}
           drop={reserveDrop}
           onDrop={() => sel && send({ type: 'withdraw', player: seat, cardIds: sel.cardIds, from: sel.hex, to: 'reserve' })}
+          trailingW={PILE_W}
+          trailing={
+            view.destroyed[seat].length > 0 && (
+              <Pile
+                view={view}
+                ids={view.destroyed[seat]}
+                side={seat}
+                onHover={(on) => setHoverGroup(on ? { kind: 'cards', ids: view.destroyed[seat], label: 'Fallen' } : null)}
+              />
+            )
+          }
         />
         <div className="command">
           <div className={`who who--${seat}`}>
@@ -751,9 +771,15 @@ function Screen({ conn, onRematch }: { conn: GameConnection; onRematch?: () => v
           </div>
           {setupPhase ? (
             <div className="setup-ctl">
-              <span className={`slots ${setupOthers > MAX_SETUP_OTHERS ? 'slots--over' : ''}`} aria-label={`${setupOthers} of ${MAX_SETUP_OTHERS} placed`}>
+              <span
+                className={`slots slots--${seat} ${setupOthers > MAX_SETUP_OTHERS ? 'slots--over' : ''}`}
+                aria-label={`${setupOthers} of ${MAX_SETUP_OTHERS} placed`}
+                title={`Up to ${MAX_SETUP_OTHERS} cards besides your Commanders`}
+              >
                 {Array.from({ length: MAX_SETUP_OTHERS }, (_, i) => (
-                  <i key={i} className={i < setupOthers ? 'on' : ''} />
+                  <svg key={i} viewBox="-7 -8 14 16" className={i < setupOthers ? 'on' : ''} aria-hidden>
+                    <polygon points="0,-7 6,-3.5 6,3.5 0,7 -6,3.5 -6,-3.5" />
+                  </svg>
                 ))}
               </span>
               <button
@@ -767,7 +793,10 @@ function Screen({ conn, onRematch }: { conn: GameConnection; onRematch?: () => v
             </div>
           ) : (
             <>
-              <Spheres lit={myCp} side={seat} mine cost={costPreview} />
+              <div className="cp-line">
+                {hint && <span className="cap-hint">{hint}</span>}
+                <Spheres lit={myCp} side={seat} mine cost={costPreview} />
+              </div>
               {controls}
             </>
           )}

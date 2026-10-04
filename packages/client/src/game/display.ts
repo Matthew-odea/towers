@@ -62,6 +62,9 @@ export interface Display {
   pulse: HexKey | null;
 }
 
+/** How long the round banner holds before play continues (a click skips it). */
+export const ROUND_BANNER_MS = 3200;
+
 export interface Frame {
   d: Display;
   ms: number;
@@ -394,7 +397,7 @@ export function framesFor(d0: Display, e: GameEvent): Frame[] {
         banner: { kind: 'round', round: e.round, winner: e.winner, reason: e.reason, roundWins: wins },
       });
       d.view.roundWins = wins;
-      return [{ d, ms: 3200, skippable: true }];
+      return [{ d, ms: ROUND_BANNER_MS, skippable: true }];
     }
     case 'matchWon':
       return [{ d: next(d0, { clash: null, banner: { kind: 'match', winner: e.winner, roundWins: e.roundWins } }), ms: 200 }];

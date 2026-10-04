@@ -3,16 +3,27 @@ import { buildState, mustApply, c, cs, seq, fight, settle, eventsOf, pend, resol
 
 describe('§13 Worked examples', () => {
   it('1. Light 4 + Heavy 4 + Shardbearer on 2+2: 3 activations, Overwhelming (2 casualties), Shardstrike lets the attacker choose 1 and the defender the other', () => {
-    const s = buildState({ board: { '0,1': ['red:L4', 'red:H4', 'red:S1'], '0,0': ['black:L8', 'black:H9'] }, dice: [2, 2] });
-    const r = fight(s, { target: '0,0', atk: ['red:L4', 'red:H4', 'red:S1'], def: ['black:L8', 'black:H9'] });
+    const s = buildState({ board: { '0,1': ['red:L4', 'red:H4', 'red:S1'], '0,0': ['black:L8', 'black:H9', 'black:L10'] }, dice: [2, 2] });
+    const r = fight(s, { target: '0,0', atk: ['red:L4', 'red:H4', 'red:S1'], def: ['black:L8', 'black:H9', 'black:L10'] });
     const ev = resolvedEv(r.events)[0];
     expect(ev.activating.attacker.sort()).toEqual(cs('red:L4', 'red:H4', 'red:S1').sort());
     expect(ev.activating.defender).toEqual([]);
     expect(ev).toMatchObject({ outcome: 'attacker', winner: 'red', overwhelming: true, shardstrike: { attacker: true, defender: false } });
     expect(ev.counts.attacker).toBe(3);
-    const q = settle(r, { pick: (p) => (p.player === 'red' ? [c('black:H9')] : undefined) });
-    expect(q.log.filter((p: any) => p.player === 'red')).toHaveLength(1);
+    const q = settle(r, { pick: (p) => (p.player === 'red' ? [c('black:H9')] : [c('black:L10')]) });
+    expect(q.log.map((p: any) => [p.player, p.count, p.reason])).toEqual([
+      ['red', 1, 'shardstrike'],
+      ['black', 1, 'normal'],
+    ]);
+    expect(q.state.destroyed.black.sort()).toEqual(cs('black:H9', 'black:L10').sort());
+  });
+
+  it('1a. ...if the defender committed exactly 2 cards, both die whoever picks, so nobody is asked', () => {
+    const s = buildState({ board: { '0,1': ['red:L4', 'red:H4', 'red:S1'], '0,0': ['black:L8', 'black:H9'] }, dice: [2, 2] });
+    const q = settle(fight(s, { target: '0,0', atk: ['red:L4', 'red:H4', 'red:S1'], def: ['black:L8', 'black:H9'] }));
+    expect(q.log).toEqual([]);
     expect(q.state.destroyed.black.sort()).toEqual(cs('black:L8', 'black:H9').sort());
+    expect(eventsOf(q.events, 'casualties')).toEqual([expect.objectContaining({ owner: 'black', chosenBy: 'red', auto: true })]);
   });
 
   it('1b. ...if the defender committed only one card, only 1 dies', () => {

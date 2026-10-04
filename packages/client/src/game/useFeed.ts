@@ -3,7 +3,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import type { PlayerId } from '@towers/engine';
 import type { GameConnection, StateUpdate } from '../net/types';
 import { eventActor, finalize, framesFor, initialDisplay, type Display } from './display';
-import { logLines, type LogEntry } from './log';
+import { appendLog, logLines, type LogEntry } from './log';
 
 const MIN_OPPONENT_STEP = 600;
 
@@ -64,7 +64,7 @@ export function useFeed(conn: GameConnection, seat: PlayerId): Feed {
       let d = cur.current ?? initialDisplay(u.view);
       const entries: LogEntry[] = [];
       for (const e of u.events) for (const l of logLines(e, d.view)) entries.push({ ...l, id: ++logId.current });
-      if (entries.length) setLog((xs) => [...xs, ...entries].slice(-400));
+      if (entries.length) setLog((xs) => appendLog(xs, entries).slice(-400));
       const t0 = performance.now();
       const fromOpponent = u.events.some((e) => {
         const a = eventActor(e);

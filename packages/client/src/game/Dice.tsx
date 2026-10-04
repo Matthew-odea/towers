@@ -14,7 +14,7 @@ function reduced(): boolean {
 }
 
 /** One carved stone die. Remount (change `throwKey`) to throw it again. */
-function DieInner({ value, from, live, picked, onClick, marker }: DieProps & { from: 0 | 1 }) {
+function DieInner({ value, from, live, picked, onClick, marker, badge }: DieProps & { from: 0 | 1 }) {
   const [face, setFace] = useState(() => (reduced() ? value : 1 + Math.floor(Math.random() * 6)));
   const [rolling, setRolling] = useState(() => !reduced());
   useEffect(() => {
@@ -41,11 +41,12 @@ function DieInner({ value, from, live, picked, onClick, marker }: DieProps & { f
         className={`die die--from${from} ${rolling ? 'is-rolling' : ''} ${live ? 'is-live' : ''} ${picked ? 'is-picked' : ''}`}
         disabled={!live}
         onClick={onClick}
-        aria-label={`Die showing ${value}`}
+        aria-label={live ? `Reroll die showing ${value}` : `Die showing ${value}`}
       >
         {[0, 1, 2, 3, 4, 5, 6, 7, 8].map((i) => (
           <i key={i} className={PIPS[face].includes(i) ? 'pip' : 'pip pip--off'} />
         ))}
+        {live && badge && <span className="die-badge">{badge}</span>}
       </button>
       {marker && <div className="die-marker">{marker}</div>}
     </div>
@@ -58,7 +59,10 @@ export interface DieProps {
   live?: boolean;
   picked?: boolean;
   onClick?: () => void;
+  /** Rerolls already made with this die (source markers under it). */
   marker?: ReactNode;
+  /** While the die can be rerolled: the source that would be spent, pinned to its corner. */
+  badge?: ReactNode;
 }
 
 export function Die(props: DieProps & { index: 0 | 1 }) {

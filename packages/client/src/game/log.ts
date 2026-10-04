@@ -1,5 +1,5 @@
 // Short log lines built from GameEvents.
-import { MODIFIER_LABELS, type GameEvent, type PlayerId, type PlayerView } from '@towers/engine';
+import { MODIFIER_LABELS, TOWER, type GameEvent, type HexKey, type PlayerId, type PlayerView } from '@towers/engine';
 import { FACTION, shortName } from './cardInfo';
 
 export interface LogEntry {
@@ -8,6 +8,51 @@ export interface LogEntry {
   text: string;
   /** Section break (new turn / new round). */
   rule?: 'turn' | 'round';
+  /** A move line: consecutive moves of the same group merge into one line (see appendLog). */
+  move?: MoveInfo;
+}
+
+interface MoveInfo {
+  player: PlayerId;
+  cardIds: string[];
+  names: string;
+  from: HexKey;
+  to: HexKey;
+  hexes: number;
+  ride: boolean;
+  /** Where the group ended up, in words ("the forest"). */
+  place: string;
+}
+
+/** A hex named by what is there, not by coordinates. */
+export function placeName(v: PlayerView, h: HexKey): string {
+  const t = v.terrain[h];
+  if (t === 'tower') return h === TOWER.red ? `the ${FACTION.red} Tower` : h === TOWER.black ? `the ${FACTION.black} Tower` : 'a Tower';
+  if (t === 'mountain') return 'the mountains';
+  if (t === 'forest') return 'the forest';
+  return 'the plains';
+}
+
+function moveText(m: MoveInfo): string {
+  return `${m.names} ${m.ride ? 'ride' : 'move'} ${m.hexes} hex${m.hexes === 1 ? '' : 'es'} to ${m.place}`;
+}
+
+/**
+ * Appends new lines to the log. A move that continues the previous line's move (same player,
+ * same cards, starting where that one ended) extends it instead of adding a near-identical line.
+ */
+export function appendLog(prev: LogEntry[], next: LogEntry[]): LogEntry[] {
+  const out = [...prev];
+  for (const e of next) {
+    const last = out[out.length - 1];
+    const a = last?.move;
+    const b = e.move;
+    if (a && b && a.player === b.player && a.to === b.from && a.cardIds.length === b.cardIds.length && b.cardIds.every((id) => a.cardIds.includes(id))) {
+      const merged: MoveInfo = { ...a, to: b.to, hexes: a.hexes + b.hexes, ride: a.ride || b.ride, place: b.place };
+      out[out.length - 1] = { ...last, move: merged, text: moveText(merged) };
+    } else out.push(e);
+  }
+  return out;
 }
 
 const REASON: Record<string, string> = { tower: 'held the Tower', decapitation: 'fell both Commanders', concede: 'concession' };
@@ -29,8 +74,19 @@ export function logLines(e: GameEvent, v: PlayerView): Omit<LogEntry, 'id'>[] {
       return e.count > 0
         ? [{ side: e.player, text: `${F[e.player]} hold the Tower · ${e.count} of 3` }]
         : [{ side: e.player, text: `${F[e.player]} lose the Tower` }];
-    case 'moved':
-      return [{ side: e.player, text: `${names(v, e.cardIds)} ${e.charge ? 'ride two hexes' : 'move'}` }];
+    case 'moved': {
+      const move: MoveInfo = {
+        player: e.player,
+        cardIds: e.cardIds,
+        names: names(v, e.cardIds),
+        from: e.from,
+        to: e.to,
+        hexes: e.path.length,
+        ride: e.charge,
+        place: placeName(v, e.to),
+      };
+      return [{ side: e.player, text: moveText(move), move }];
+    }
     case 'withdrew':
       return [{ side: e.player, text: `${names(v, e.cardIds)} withdraw${e.to === 'reserve' ? ' to Reserve' : ''}` }];
     case 'deployed':
@@ -66,7 +122,7 @@ export function logLines(e: GameEvent, v: PlayerView): Omit<LogEntry, 'id'>[] {
       ];
     }
     case 'diceRolled':
-      return [{ side: null, text: `${e.roll > 1 ? 'Press · ' : ''}Dice ${e.dice[0]} · ${e.dice[1]}` }];
+      return [{ side: null, text: `${e.roll > 1 ? 'Press · ' : ''}Dice ${e.dice[0]} ${e.dice[1]} = ${e.dice[0] + e.dice[1]}` }];
     case 'rerolled':
       return [
         {

@@ -13,6 +13,7 @@ import { CardView, Glyph, type CardMark } from './Card';
 import { BlankDie, Die } from './Dice';
 import { ART, FACTION, sortCards } from './cardInfo';
 import type { ClashView } from './display';
+import { rowLayout } from './layout';
 
 export type ClashPrompt =
   | {
@@ -157,24 +158,28 @@ interface RowProps {
 }
 
 function Row({ view, side, ids, marksFor, badgeFor, onClick, onHoverCard, mods, count, role, far, extra }: RowProps) {
-  const w = ids.length > 8 ? 44 : ids.length > 5 ? 52 : 66;
+  const { w, step } = rowLayout(ids.length, !!onClick);
+  const sorted = sortCards(view, ids);
   return (
     <div className={`clash-row clash-row--${far ? 'far' : 'near'} clash-row--${side}`}>
-      <div className="clash-side">
+      <div className="clash-side" title={count != null && count > 0 ? `${count} activation${count === 1 ? '' : 's'}` : undefined}>
         <span className="clash-side-name caps">{FACTION[side]}</span>
         {role && <span className="clash-role caps">{role === 'attacker' ? 'Attack' : 'Defend'}</span>}
         <SideMarks mods={mods} />
-        {count != null && count > 0 && <span className="clash-count numeral">×{count}</span>}
         {extra}
       </div>
-      <div className="clash-cards">
-        {sortCards(view, ids).map((id) => (
+      <div
+        className={`clash-cards ${step !== null ? 'clash-cards--overlap' : ''}`}
+        style={step !== null ? { width: (sorted.length - 1) * step + w, height: w * 1.4 } : undefined}
+      >
+        {sorted.map((id, i) => (
           <CardView
             key={id}
             card={view.cards[id]}
             width={w}
             marks={marksFor(id)}
             badge={badgeFor?.(id)}
+            style={step !== null ? { position: 'absolute', left: i * step, zIndex: i } : undefined}
             onClick={
               onClick
                 ? (e) => {
@@ -188,6 +193,123 @@ function Row({ view, side, ids, marksFor, badgeFor, onClick, onHoverCard, mods, 
           />
         ))}
       </div>
+    </div>
+  );
+}
+
+// ---- Dice on the board ----------------------------------------------------------------------
+
+export interface ClashDiceProps {
+  view: PlayerView;
+  seat: PlayerId;
+  clash: ClashView;
+  prompt: ClashPrompt;
+  /** Opponent is the one deciding right now. */
+  waiting: boolean;
+}
+
+function SourceMark({ view, player, source, commanderId }: { view: PlayerView; player: PlayerId; source: 'commander' | 'disadvantage'; commanderId: string | null }) {
+  const ch = source === 'commander' && commanderId ? view.cards[commanderId]?.character : undefined;
+  return ch ? (
+    <img className={`reroll-src reroll-src--${player}`} src={ART.portrait(ch)} alt="" />
+  ) : (
+    <span className={`reroll-src reroll-src--dis reroll-src--${player}`}>
+      <MarkIcon kind="dis" />
+    </span>
+  );
+}
+
+/**
+ * The two stone dice, thrown onto the contested edge of the board, with the result and the
+ * decisions that belong to them (reroll a die by clicking it, Pass, Press / Break off) underneath.
+ */
+export function ClashDice({ view, seat, clash, prompt, waiting }: ClashDiceProps) {
+  const rr = prompt?.kind === 'reroll' ? prompt : null;
+  const picked = rr ? rr.options[rr.source] : null;
+  const pickedMark = picked ? (
+    <SourceMark view={view} player={seat} source={picked.source} commanderId={picked.source === 'commander' ? picked.commanderId : null} />
+  ) : null;
+  const done = (i: 0 | 1) =>
+    clash.rerolls
+      .filter((r) => r.die === i)
+      .map((r, k) => <SourceMark key={k} view={view} player={r.player} source={r.source} commanderId={r.commanderId} />);
+  const dieMarker = (i: 0 | 1) => {
+    const marks = done(i);
+    return marks.length ? <>{marks}</> : null;
+  };
+
+  const result = clash.result;
+  let outcome: string | null = null;
+  if (result) {
+    if (result.outcome === 'stale') outcome = 'Stale';
+    else if (result.outcome === 'bloodbath') outcome = 'Bloodbath';
+    else outcome = `${FACTION[result.winner!]} win`;
+  }
+  if (clash.ended === 'brokeOff') outcome = 'Broken off';
+  const total = clash.dice && result ? clash.dice[0] + clash.dice[1] : null;
+  const staleNote = result?.outcome === 'stale' && clash.staleCount > 0 && !clash.ended ? clash.staleCount : null;
+
+  return (
+    <div className={`clash-dice ${clash.ended ? 'clash-dice--ended' : ''}`} onClick={(e) => e.stopPropagation()}>
+      <div className="dice-tray">
+        {clash.dice ? (
+          <>
+            <Die index={0} value={clash.dice[0]} throwKey={clash.dieKeys[0]} live={!!rr} onClick={() => rr?.onDie(0)} marker={dieMarker(0)} badge={pickedMark} />
+            <Die index={1} value={clash.dice[1]} throwKey={clash.dieKeys[1]} live={!!rr} onClick={() => rr?.onDie(1)} marker={dieMarker(1)} badge={pickedMark} />
+          </>
+        ) : (
+          <>
+            <BlankDie />
+            <BlankDie />
+          </>
+        )}
+      </div>
+      <div className="clash-verdict">
+        {total !== null && <span className="clash-total numeral">{total}</span>}
+        {outcome && <span className="clash-outcome display">{outcome}</span>}
+        {staleNote !== null && (
+          <span className="stale-note" title="Three stale rolls give the defender Advantage">
+            {staleNote} of 3
+          </span>
+        )}
+        {waiting && !rr && prompt?.kind !== 'press' && <span className="clash-wait" aria-label="Waiting for opponent" />}
+      </div>
+      {rr && (
+        <div className="reroll-bar">
+          {rr.options.length > 1 && (
+            <div className="reroll-sources">
+              {rr.options.map((o, i) => (
+                <button
+                  key={i}
+                  type="button"
+                  className={`reroll-chip ${rr.source === i ? 'is-on' : ''}`}
+                  onClick={() => rr.onSource(i)}
+                  title={o.source === 'commander' ? 'Commander reroll' : 'Force a reroll (Disadvantage)'}
+                >
+                  {o.source === 'commander' && view.cards[o.commanderId]?.character ? (
+                    <img src={ART.portrait(view.cards[o.commanderId].character!)} alt="" />
+                  ) : (
+                    <MarkIcon kind="dis" />
+                  )}
+                </button>
+              ))}
+            </div>
+          )}
+          <button type="button" className="btn ghost" onClick={rr.onPass}>
+            Pass
+          </button>
+        </div>
+      )}
+      {prompt?.kind === 'press' && (
+        <div className="press-bar">
+          <button type="button" className="btn lit" onClick={prompt.onPress}>
+            Press
+          </button>
+          <button type="button" className="btn" onClick={prompt.onBreak}>
+            Break off
+          </button>
+        </div>
+      )}
     </div>
   );
 }
@@ -289,34 +411,6 @@ export function Clash({ view, seat, clash, prompt, flare, dying, waiting, onHove
     ),
   } as Record<PlayerId, ReactNode>;
 
-  // ---- dice ----
-  const rr = prompt?.kind === 'reroll' ? prompt : null;
-  const dieMarker = (i: 0 | 1) => {
-    const marks = (clash?.rerolls ?? []).filter((r) => r.die === i);
-    if (!marks.length) return null;
-    return (
-      <>
-        {marks.map((r, k) =>
-          r.source === 'commander' && r.commanderId && view.cards[r.commanderId]?.character ? (
-            <img key={k} className={`reroll-src reroll-src--${r.player}`} src={ART.portrait(view.cards[r.commanderId].character!)} alt="" />
-          ) : (
-            <span key={k} className={`reroll-src reroll-src--dis reroll-src--${r.player}`}>
-              <MarkIcon kind="dis" />
-            </span>
-          ),
-        )}
-      </>
-    );
-  };
-
-  let outcome: string | null = null;
-  if (result) {
-    if (result.outcome === 'stale') outcome = 'Stale';
-    else if (result.outcome === 'bloodbath') outcome = 'Bloodbath';
-    else outcome = `${FACTION[result.winner!]} win`;
-  }
-  if (clash?.ended === 'brokeOff') outcome = 'Broken off';
-
   const confirmable = prompt?.kind === 'commit' || prompt?.kind === 'defend';
   const witPicked =
     (prompt?.kind === 'commit' && witA !== null) || (prompt?.kind === 'defend' && witD !== null);
@@ -325,66 +419,7 @@ export function Clash({ view, seat, clash, prompt, flare, dying, waiting, onHove
     <div className={`clash ${clash?.ended ? 'clash--ended' : ''}`} onClick={(e) => e.stopPropagation()}>
       {rows[opp]}
 
-      <div className="clash-dice">
-        <div className="dice-tray">
-          {clash?.dice ? (
-            <>
-              <Die index={0} value={clash.dice[0]} throwKey={clash.dieKeys[0]} live={!!rr} onClick={() => rr?.onDie(0)} marker={dieMarker(0)} />
-              <Die index={1} value={clash.dice[1]} throwKey={clash.dieKeys[1]} live={!!rr} onClick={() => rr?.onDie(1)} marker={dieMarker(1)} />
-            </>
-          ) : (
-            <>
-              <BlankDie />
-              <BlankDie />
-            </>
-          )}
-        </div>
-        <div className="clash-verdict">
-          {outcome && <span className="clash-outcome display">{outcome}</span>}
-          {clash && clash.staleCount > 0 && (
-            <span className="stale-pips" title="Stale rolls">
-              {[0, 1, 2].map((i) => (
-                <i key={i} className={i < clash.staleCount ? 'on' : ''} />
-              ))}
-            </span>
-          )}
-          {waiting && !outcome && <span className="clash-wait" aria-label="Waiting for opponent" />}
-        </div>
-        {rr && (
-          <div className="reroll-bar">
-            <div className="reroll-sources">
-              {rr.options.map((o, i) => (
-                <button
-                  key={i}
-                  type="button"
-                  className={`reroll-chip ${rr.source === i ? 'is-on' : ''}`}
-                  onClick={() => rr.onSource(i)}
-                  title={o.source === 'commander' ? 'Commander reroll' : 'Force a reroll (Disadvantage)'}
-                >
-                  {o.source === 'commander' && view.cards[o.commanderId]?.character ? (
-                    <img src={ART.portrait(view.cards[o.commanderId].character!)} alt="" />
-                  ) : (
-                    <MarkIcon kind="dis" />
-                  )}
-                </button>
-              ))}
-            </div>
-            <button type="button" className="btn ghost" onClick={rr.onPass}>
-              Pass
-            </button>
-          </div>
-        )}
-        {prompt?.kind === 'press' && (
-          <div className="press-bar">
-            <button type="button" className="btn lit" onClick={prompt.onPress}>
-              Press
-            </button>
-            <button type="button" className="btn" onClick={prompt.onBreak}>
-              Break off
-            </button>
-          </div>
-        )}
-      </div>
+      <div className="clash-mid">{waiting && !clash?.dice && <span className="clash-wait" aria-label="Waiting for opponent" />}</div>
 
       {rows[seat]}
 
