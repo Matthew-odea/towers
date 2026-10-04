@@ -1,1 +1,23 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32"><rect width="32" height="32" rx="6" fill="#0b0e13"/><path d="M9 26V12h3v2h2.5v-2h3v2H20v-2h3v14h-3v-5a2 2 0 0 0-4 0v5z" fill="#dfeaf0"/><path d="M9 9h14l-1.5 2h-11z" fill="#6fb7cf"/></svg>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">
+  <defs>
+    <radialGradient id="glow" cx="16" cy="7" r="9" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#e8f7ff" stop-opacity="0.95"/>
+      <stop offset="0.35" stop-color="#9fd8f2" stop-opacity="0.45"/>
+      <stop offset="1" stop-color="#9fd8f2" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="stone" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#efe6d0"/>
+      <stop offset="1" stop-color="#bfb397"/>
+    </linearGradient>
+  </defs>
+  <rect width="32" height="32" rx="7" fill="#0b0e12"/>
+  <circle cx="16" cy="7" r="9" fill="url(#glow)"/>
+  <g fill="url(#stone)">
+    <path d="M16 3.2 18.2 10h-4.4z"/>
+    <rect x="13" y="11" width="6" height="3.6"/>
+    <rect x="11.4" y="15.6" width="9.2" height="4"/>
+    <rect x="9.6" y="20.6" width="12.8" height="4"/>
+    <rect x="7.6" y="25.6" width="16.8" height="3.4"/>
+  </g>
+  <path d="M16 5.1 16.9 6.4 16 7.7 15.1 6.4z" fill="#f4fbff"/>
+</svg>

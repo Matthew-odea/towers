@@ -3,6 +3,7 @@ import { WebSocketTransport } from '../net/WebSocketTransport';
 import { getName, setName } from '../net/storage';
 import { gamePath, navigate } from './route';
 import { stashConnection } from './connections';
+import { HeroLayout } from './HeroLayout';
 
 export function Landing() {
   const [name, setNameState] = useState(getName);
@@ -27,7 +28,7 @@ export function Landing() {
   };
 
   return (
-    <main className="landing storm-field">
+    <HeroLayout>
       <h1 className="landing-title">Towers</h1>
       <form className="landing-form" onSubmit={(e) => { e.preventDefault(); void start(false); }}>
         <input
@@ -49,6 +50,6 @@ export function Landing() {
         {problem && <p className="quiet" role="status">{problem}</p>}
       </form>
       <a className="stats-link" href="#/stats" onClick={() => ready && setName(name)}>Stats</a>
-    </main>
+    </HeroLayout>
   );
 }

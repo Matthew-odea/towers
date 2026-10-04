@@ -13,7 +13,7 @@ variable "name" {
 variable "lambda_reserved_concurrency" {
   description = "Reserved Lambda concurrency (caps cost). Use -1 for unreserved, e.g. on a new account with a low concurrency quota."
   type        = number
-  default     = 25
+  default     = -1
 }
 
 variable "budget_email" {
