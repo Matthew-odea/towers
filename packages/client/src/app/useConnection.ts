@@ -27,7 +27,7 @@ export function useChat(conn: GameConnection, open: boolean) {
     return conn.subscribe({
       onChat: (m) => {
         setMessages((prev) => [...prev, m]);
-        if (m.from !== undefined) setUnread(true);
+        if (m.from !== conn.seat) setUnread(true);
       },
     });
   }, [conn]);

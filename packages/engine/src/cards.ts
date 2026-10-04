@@ -13,7 +13,7 @@ export const CHARACTERS: Readonly<Record<PlayerId, Readonly<Record<'commander' |
     commander: ['raboniel', 'eshonai'],
     shardbearer: ['szeth', 'moash'],
     cavalry: ['leshwi', 'lezian'],
-    archer: ['venli', 'thude'],
+    archer: ['venli', 'rlain'],
     wit: ['hoid'],
   },
 };

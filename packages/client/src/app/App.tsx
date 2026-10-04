@@ -2,9 +2,7 @@ import { useRoute } from './route';
 import { Landing } from './Landing';
 import { Stats } from './Stats';
 import { GameRoute, OfflineRoute } from './GameRoute';
-
-const globalStyles = import.meta.glob(['../styles/tokens.css', '../styles/global.css'], { eager: true });
-void globalStyles;
+import '../styles/global.css';
 import './app.css';
 
 export function App() {

@@ -247,6 +247,8 @@ export function Board(props: BoardProps) {
               key={`h${h}`}
               points={polyPoints(hexCorners(hexCenter(h, seat), HEX))}
               className={`hit ${hexMarks[h] && hexMarks[h] !== 'source' ? 'hit--live' : ''} ${view.stacks[h] ? 'hit--stack' : ''}`}
+              data-hex={h}
+              data-mark={hexMarks[h] ?? undefined}
               onClick={(e) => {
                 e.stopPropagation();
                 props.onHexClick(h, e);

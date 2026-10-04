@@ -30,7 +30,7 @@ viewFor(state: MatchState | PlayerView, player: PlayerId): PlayerView
 pendingDecision(state: MatchState | PlayerView): PendingDecision
 actingPlayers(state): PlayerId[]          // pendingDecision(state).players
 mustAct(state, player): boolean
-chooseBotAction(state: MatchState | PlayerView, player: PlayerId, opts?: { level?: 'random'; rand?: () => number }): Action | null
+chooseBotAction(state: MatchState | PlayerView, player: PlayerId, opts?: { level?: 'smart' | 'random'; rand?: () => number }): Action | null
 ENGINE_VERSION: string
 ```
 
@@ -41,8 +41,11 @@ ENGINE_VERSION: string
 - `validateAction` runs the same checks as `applyAction` without executing anything. It works
   on a `PlayerView`, which is how clients and bots test legality.
 - `chooseBotAction` returns a legal action for `player`'s pending decision, or `null` if that
-  player has nothing to decide. Today it dispatches to the random-legal bot
-  (`src/bot/random.ts`). Without `rand` it is deterministic for a given state. It never concedes.
+  player has nothing to decide. The default level `'smart'` is the heuristic search bot in
+  `src/bot/smart.ts` (two-ply search over its own turn actions in a light board model, exact
+  engagement expected values; about 5 ms per decision on average, p99 about 50 ms); `'random'`
+  picks uniformly random legal actions (`src/bot/random.ts`). Without `rand` it is deterministic
+  for a given state. It never concedes.
 
 ### Actions
 
@@ -167,7 +170,13 @@ The engine resolves these cases automatically, so nobody is asked a question wit
 - A casualty step whose `count` equals the number of eligible cards. All of them die.
 - Combat Retreat when no hex is legal. The stack stays (`retreated` with `to: null, auto: true`).
 
-The engine never auto-ends a turn, even at 0 CP. Clients may send `endTurn` themselves.
+**Automatic end of turn.** When the turn player has 0 CP left and no engagement is in progress,
+the engine ends the turn itself, inside the same `applyAction` call: it emits
+`turnEnded` with `auto: true` and then starts the opponent's turn (`towerCount`/`turnStarted`,
+or `roundWon` if that Tower count wins the round). An Engage paid with the last CP ends the turn
+as soon as its engagement ends. Every turn action costs at least 1 CP, so at 0 CP End turn
+would be the only choice left. Clients never need to send `endTurn` at 0 CP, and a `turn`
+decision always has `cp >= 1`.
 
 ---
 
@@ -181,7 +190,7 @@ Events can be shown to both players. None of them reveals a hidden setup placeme
 | `setupSubmitted` | `player` |
 | `setupRevealed` | `placements: Record<PlayerId, { cardId, hex }[]>` |
 | `turnStarted` | `player, turn, cp` |
-| `turnEnded` | `player` |
+| `turnEnded` | `player`, `auto?` (`true` when the engine ended the turn at 0 CP) |
 | `towerCount` | `player, count, hex`. Fires when the count goes up at turn start and when it resets to 0 |
 | `moved` | `player, cardIds, from, path, to, charge` (`charge` = it was a 2-hex Cavalry move) |
 | `withdrew` | `player, cardIds, from, to` (`'reserve'` possible) |
@@ -208,7 +217,8 @@ Events can be shown to both players. None of them reveals a hidden setup placeme
 Typical engagement sequence: `engageDeclared` → (`engagementStarted` once the defender commits)
 → `diceRolled` → `rerollPassed`/`rerolled`… → `resolved` → [`advantageGained`] → (stale:
 `pressed` → `diceRolled`… or `brokeOff`) → `casualties`… → [`fortifyEnded`, `towerCount`] →
-[`retreated`] → `engagementEnded` → [`roundWon` → `roundStarted` | `matchWon`].
+[`retreated`] → `engagementEnded` → [`roundWon` → `roundStarted` | `matchWon`] →
+[`turnEnded` (`auto`) → `turnStarted`, when the Engage used the last CP].
 
 ---
 
@@ -305,8 +315,8 @@ it with `passReroll`/`reroll` before the engagement resolves.
 
 ### Simulation
 
-`npm run sim -w @towers/engine -- --games 50 [--seed s] [--max-turns 400] [--verbose]` plays
-random-bot matches through `viewFor` and checks invariants after every action: card
+`npm run sim -- --games 100 [--red smart|random] [--black smart|random] [--seed s] [--max-turns 400] [--workers N] [--verbose]`
+plays bot-vs-bot matches (smart vs smart by default) through `viewFor` and checks invariants after every action: card
 conservation, no shared hexes, CP within bounds, caps respected, Fortified hexes held by their
 owner, someone always able to act, the bot always able to answer. `simulate(seed)` and
 `checkInvariants(state)` are exported from `scripts/sim.ts`.
@@ -372,5 +382,6 @@ These are points RULINGS leaves implicit. Each is implemented as written here an
 18. **Tower count** fires a `towerCount` event when it goes up at turn start, and fires one
     with `count: 0` when it resets, either immediately after the board changes or at a turn
     start.
-19. **Turns never auto-end**, even at 0 CP. Concede is always a second legal option, so the
-    "exactly one legal outcome" rule does not apply.
+19. **Turns end automatically at 0 CP** once no engagement is in progress (`turnEnded` with
+    `auto: true`). Concede is still legal at 0 CP, but the owner asked for the turn to pass on
+    without a click, so the engine treats End turn as the only real choice.

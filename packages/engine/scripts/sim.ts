@@ -75,6 +75,7 @@ export function checkStateInvariants(s: MatchState): string[] {
     }
     if (spent + t.cp !== CP_PER_TURN) errs.push(`cp ${t.cp} + spent ${spent} != ${CP_PER_TURN}`);
     if (t.number < 1) errs.push(`turn number ${t.number}`);
+    if (s.phase === 'play' && !s.engagement && t.cp === 0) errs.push('free turn left at 0 CP (should have auto-ended)');
   }
   // Round / match counters.
   const wins = { red: 0, black: 0 } as Record<PlayerId, number>;

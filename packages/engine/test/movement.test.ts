@@ -197,7 +197,10 @@ describe('§6.4 Withdraw', () => {
   test('Withdraw and Move are separate action types for the cap', () => {
     let s = buildState({ board: { '0,-2': ['red:L7'], '0,0': ['red:L2'] } });
     s = run(s, mv(['red:L7'], '0,-2', '0,-1'), mv(['red:L7'], '0,-1', '1,-1'), mv(['red:L7'], '1,-1', '1,0')).state;
-    expect(mustApply(s, { type: 'withdraw', player: 'red', cardIds: [c('red:L2')], from: '0,0', to: '0,1' }).state.turn!.cp).toBe(0);
+    const r = mustApply(s, { type: 'withdraw', player: 'red', cardIds: [c('red:L2')], from: '0,0', to: '0,1' });
+    // The 4th CP was accepted; at 0 CP the turn ends automatically.
+    expect(r.events.some((e) => e.type === 'withdrew')).toBe(true);
+    expect(r.state.turn!.player).toBe('black');
   });
 
   test('a Withdrawn Wit can be Spawned again', () => {

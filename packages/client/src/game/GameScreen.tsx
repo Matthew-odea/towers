@@ -186,7 +186,7 @@ function Screen({ conn, onRematch }: { conn: GameConnection; onRematch?: () => v
     [live, engageMode, seat],
   );
 
-  if (!live || !d || !pd) return <div className="game game--empty storm-field" />;
+  if (!live || !d || !pd) return <div className="game game--empty storm-field" data-phase="none" />;
 
   const view = d.view;
   const setupPhase = live.phase === 'setup' && view.phase === 'setup';
@@ -633,7 +633,7 @@ function Screen({ conn, onRematch }: { conn: GameConnection; onRematch?: () => v
       )}
       <button
         type="button"
-        className={`btn act act--end ${turnPd.cp === 0 ? 'lit' : ''}`}
+        className="btn act act--end"
         onClick={() => send({ type: 'endTurn', player: seat })}
       >
         End turn
@@ -644,7 +644,17 @@ function Screen({ conn, onRematch }: { conn: GameConnection; onRematch?: () => v
   const showClash = !!(d.clash || prompt?.kind === 'commit');
 
   return (
-    <div className={`game storm-field ${showClash ? 'game--clash' : ''}`} tabIndex={-1} onKeyDown={onKeyDown}>
+    <div
+      className={`game storm-field ${showClash ? 'game--clash' : ''}`}
+      tabIndex={-1}
+      onKeyDown={onKeyDown}
+      data-seat={seat}
+      data-phase={live.phase}
+      data-decision={pd.kind}
+      data-acting={canAct ? 'me' : (pd.players as PlayerId[]).length ? 'opponent' : 'none'}
+      data-busy={feed.busy ? 'true' : 'false'}
+      data-version={feed.latest?.version}
+    >
       <div className="storm-mist" aria-hidden />
 
       {/* ---- top: opponent ---- */}

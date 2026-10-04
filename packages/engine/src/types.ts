@@ -248,7 +248,8 @@ export type GameEvent =
   | { type: 'setupSubmitted'; player: PlayerId }
   | { type: 'setupRevealed'; placements: Record<PlayerId, Placement[]> }
   | { type: 'turnStarted'; player: PlayerId; turn: number; cp: number }
-  | { type: 'turnEnded'; player: PlayerId }
+  /** `auto`: the engine ended the turn because the player had 0 CP left and nothing in progress. */
+  | { type: 'turnEnded'; player: PlayerId; auto?: boolean }
   | { type: 'towerCount'; player: PlayerId; count: number; hex: HexKey }
   | { type: 'moved'; player: PlayerId; cardIds: string[]; from: HexKey; path: HexKey[]; to: HexKey; charge: boolean }
   | { type: 'withdrew'; player: PlayerId; cardIds: string[]; from: HexKey; to: HexKey | 'reserve' }

@@ -7,7 +7,7 @@ import { WebSocketServer, WebSocket } from 'ws';
 import { GameService } from '../core/game-service';
 import { MemoryConnectionStore, MemoryGameStore, MemoryStatsStore } from '../core/memory-stores';
 import type { PlayerStats, ServerMessage } from '../core/protocol';
-import type { Broadcaster } from '../core/types';
+import type { Broadcaster, TestHooks } from '../core/types';
 
 export interface LocalServerOptions {
   port?: number;
@@ -17,6 +17,8 @@ export interface LocalServerOptions {
   /** Directory of the built client. Omit or missing: no static serving. */
   clientDir?: string;
   quiet?: boolean;
+  /** Deterministic games for e2e tests. Never set outside tests. */
+  testHooks?: TestHooks;
 }
 
 export interface LocalServer {
@@ -106,6 +108,7 @@ export async function startLocalServer(opts: LocalServerOptions = {}): Promise<L
     stats,
     out,
     log: opts.quiet ? () => {} : undefined,
+    testHooks: opts.testHooks,
   });
 
   const clientDir = opts.clientDir && fs.existsSync(path.join(opts.clientDir, 'index.html')) ? path.resolve(opts.clientDir) : null;

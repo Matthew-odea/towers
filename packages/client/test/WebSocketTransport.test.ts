@@ -123,3 +123,59 @@ describe('WebSocketTransport', () => {
     expect((await caught).code).toBe('unreachable');
   });
 });
+
+describe('WebSocketTransport and the server protocol', () => {
+  it('maps a presence entry with name null to an empty seat', async () => {
+    const { conn, ws } = await created();
+    const seen: unknown[] = [];
+    conn.subscribe({ onPresence: (p) => seen.push(p) });
+    ws.receive({
+      t: 'presence',
+      gameId: 'g1',
+      players: { black: { name: 'Ann', connected: true, bot: false }, red: { name: null, connected: false, bot: false } },
+    });
+    expect(conn.getPresence()).toEqual({ black: { name: 'Ann', connected: true, bot: false }, red: null });
+    expect(seen).toHaveLength(1);
+  });
+
+  it('keeps chat names and ignores history replayed on a re-join', async () => {
+    const { conn, ws } = await created();
+    const got: unknown[] = [];
+    conn.subscribe({ onChat: (m) => got.push(m) });
+    const line = { t: 'chat', gameId: 'g1', from: 'red', name: 'Bo', text: 'hi', ts: 5 };
+    ws.receive(line);
+    ws.receive(line);
+    expect(conn.getChat()).toEqual([{ from: 'red', name: 'Bo', text: 'hi', ts: 5 }]);
+    expect(got).toHaveLength(1);
+  });
+
+  it('rematch sends the finished game and seat token, then follows the new game', async () => {
+    store.set('towers.seat.old', 'tok-old');
+    const p = WebSocketTransport.rematch('Ann', { gameId: 'old', seat: 'red' }, deps);
+    await flush();
+    const ws = FakeWebSocket.last;
+    ws.open();
+    ws.receive({ t: 'welcome', username: 'Ann' });
+    expect(ws.sent[1]).toEqual({ t: 'rematch', gameId: 'old', seatToken: 'tok-old' });
+    ws.receive({ t: 'joined', gameId: 'new', seat: 'black', seatToken: 'tok-new' });
+    const conn = await p;
+    expect(conn.gameId).toBe('new');
+    expect(store.get('towers.seat.new')).toBe('tok-new');
+    // a reconnect re-joins the new game, not the old one
+    ws.drop();
+    await vi.advanceTimersByTimeAsync(150);
+    const ws2 = FakeWebSocket.last;
+    ws2.open();
+    ws2.receive({ t: 'welcome', username: 'Ann' });
+    expect(ws2.sent[1]).toEqual({ t: 'join', gameId: 'new', seatToken: 'tok-new' });
+  });
+
+  it('reports an opponent rematch offer', async () => {
+    const { conn, ws } = await created();
+    const offers: string[] = [];
+    conn.subscribe({ onRematchOffer: (id) => offers.push(id) });
+    ws.receive({ t: 'rematch', gameId: 'g1', next: 'g2', by: 'black' }); // our own seat: ignored
+    ws.receive({ t: 'rematch', gameId: 'g1', next: 'g2', by: 'red' });
+    expect(offers).toEqual(['g2']);
+  });
+});

@@ -397,3 +397,88 @@ test('no internal errors were logged', () => {
 
 // keep type imports used
 export type _Unused = [PlayerView, ServerMessage];
+
+describe('rematch', () => {
+  async function finished() {
+    const { a, b, gameId } = await twoPlayers();
+    const red = a.seat === 'red' ? a : b;
+    await act(red, gameId, { type: 'concede', player: 'red' });
+    await act(red, gameId, { type: 'concede', player: 'red' });
+    expect(view(a.c).phase).toBe('matchOver');
+    return { a, b, gameId };
+  }
+
+  test('is refused before the match is over', async () => {
+    const { a, gameId } = await twoPlayers();
+    await send(a.c, { t: 'rematch', gameId, seatToken: a.token });
+    expect(lastError(a.c)?.code).toBe('not_over');
+  });
+
+  test('first request creates the follow-up game, the opponent is told, the second request joins it', async () => {
+    const { a, b, gameId } = await finished();
+    await connect('a2', 'Ann');
+    await send('a2', { t: 'rematch', gameId, seatToken: a.token });
+    const ja = bus.last('a2', 'joined')!;
+    expect(ja.gameId).not.toBe(gameId);
+    expect(bus.ofType('a2', 'state')).toHaveLength(0); // waiting for the opponent
+    const offer = bus.last(b.c, 'rematch')!;
+    expect(offer).toMatchObject({ gameId, next: ja.gameId });
+
+    await connect('b2', 'Bo');
+    await send('b2', { t: 'rematch', gameId, seatToken: b.token });
+    const jb = bus.last('b2', 'joined')!;
+    expect(jb.gameId).toBe(ja.gameId);
+    expect(jb.seat).not.toBe(ja.seat);
+    expect(view('a2').phase).toBe('setup');
+    expect(view('b2').names[jb.seat]).toBe('Bo');
+    // a third request finds the game full
+    await connect('c2', 'Cy');
+    await send('c2', { t: 'rematch', gameId, seatToken: a.token });
+    expect(lastError('c2')?.code).toBe('full');
+  });
+
+  test('a bot game rematch starts a new bot game straight away', async () => {
+    await connect('h', 'Hal');
+    const g = await create('h', true);
+    await act(g, g.gameId, { type: 'concede', player: g.seat });
+    if (view('h').phase !== 'matchOver') await act(g, g.gameId, { type: 'concede', player: g.seat });
+    expect(view('h').phase).toBe('matchOver');
+    await connect('h2', 'Hal');
+    await send('h2', { t: 'rematch', gameId: g.gameId, seatToken: g.token });
+    const j = bus.last('h2', 'joined')!;
+    expect(j.gameId).not.toBe(g.gameId);
+    expect(view('h2').phase).toBe('setup');
+    expect(bus.last('h2', 'presence')!.players[j.seat === 'red' ? 'black' : 'red']).toMatchObject({ bot: true });
+  });
+});
+
+describe('test hooks', () => {
+  test('fixed seed, creator seat, first player and dice make games repeatable', async () => {
+    const mk = () =>
+      new GameService({
+        games: new MemoryGameStore(),
+        connections: new MemoryConnectionStore(),
+        stats: new MemoryStatsStore(),
+        out: bus,
+        clock: { now: () => now },
+        testHooks: { seed: 'fixed', creatorSeat: 'black', firstPlayer: 'black', dice: [6, 6] },
+      });
+    const terrains: unknown[] = [];
+    for (const [i, s] of [mk(), mk()].entries()) {
+      const a = `ha${i}`;
+      const b = `hb${i}`;
+      for (const [c, n] of [[a, 'Ann'], [b, 'Bo']] as const) {
+        await s.handleConnect(c);
+        await s.handleMessage(c, JSON.stringify({ t: 'hello', username: n }));
+      }
+      await s.handleMessage(a, JSON.stringify({ t: 'create', vsBot: false }));
+      const ja = bus.last(a, 'joined')!;
+      expect(ja.seat).toBe('black');
+      await s.handleMessage(b, JSON.stringify({ t: 'join', gameId: ja.gameId }));
+      const v = bus.last(a, 'state')!.view;
+      expect(v.roundStarter).toBe('black');
+      terrains.push(v.terrain);
+    }
+    expect(terrains[0]).toEqual(terrains[1]);
+  });
+});

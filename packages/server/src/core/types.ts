@@ -28,6 +28,8 @@ export interface GameRecord {
   /** Per-seat character commit counts accumulated from engagement events. */
   commits: Record<PlayerId, Record<string, number>>;
   statsRecorded: boolean;
+  /** Id of the follow-up game once a player asked for a rematch. */
+  rematch?: string | null;
   createdAt: number;
   /** Epoch seconds (DynamoDB TTL). */
   expiresAt: number;
@@ -64,6 +66,21 @@ export interface StatsStore {
 export interface Broadcaster {
   /** Resolves 'gone' when the connection no longer exists. */
   send(connectionId: string, msg: ServerMessage): Promise<'ok' | 'gone'>;
+}
+
+/**
+ * Deterministic games for end-to-end tests. Only the local server sets these, and only when
+ * TOWERS_TEST=1; the Lambda never does.
+ */
+export interface TestHooks {
+  /** Seed used for every new match (instead of a random UUID). */
+  seed?: string;
+  /** Seat given to whoever creates a game (instead of a random one). */
+  creatorSeat?: PlayerId;
+  /** Round-1 first player. */
+  firstPlayer?: PlayerId;
+  /** Dice values queued at the start of every match (consumed before the RNG). */
+  dice?: number[];
 }
 
 export interface Clock {

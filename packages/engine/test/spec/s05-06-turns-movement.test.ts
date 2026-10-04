@@ -102,8 +102,9 @@ describe('§5 Turns and Command Points', () => {
     s = mustApply(s, { type: 'move', player: 'red', cardIds: cs('red:L6'), from: '0,1', path: ['0,0'] }).state;
     s = settle(fight(s, { target: '0,-1', atk: ['red:L6'] })).state;
     s = mustApply(s, { type: 'move', player: 'red', cardIds: cs('red:L5'), from: '0,2', path: ['0,1'] }).state;
-    s = settle(fight(s, { target: '0,-1', atk: ['red:L6'] })).state;
-    expect(s.turn!.cp).toBe(0);
+    const last = settle(fight(s, { target: '0,-1', atk: ['red:L6'] }));
+    // All 4 CP spent: the turn ended automatically once the engagement was over.
+    expect(last.state.turn!.player).toBe('black');
   });
 
   it('there is no undo action', () => {

@@ -18,7 +18,7 @@ export function Stats() {
   }, [name]);
 
   return (
-    <main className="stats">
+    <main className="stats storm-field">
       <a className="back-link" href="#/" aria-label="Back">&larr;</a>
       {!name ? (
         <form className="landing-form" onSubmit={(e) => { e.preventDefault(); if (draft.trim()) { setName(draft); setNameState(draft.trim()); } }}>

@@ -6,11 +6,12 @@
   "engines": { "node": ">=22" },
   "scripts": {
     "test": "npm test --workspaces --if-present",
-    "typecheck": "npm run typecheck --workspaces --if-present",
+    "typecheck": "npm run typecheck --workspaces --if-present && tsc --noEmit -p e2e",
     "dev": "concurrently -n server,client -c blue,green \"npm run dev -w @towers/server\" \"npm run dev -w @towers/client\"",
     "start": "npm run build -w @towers/client && npm start -w @towers/server",
     "sim": "npm run sim -w @towers/engine --",
     "build": "npm run build -w @towers/client",
+    "e2e": "playwright test",
     "deploy": "bash scripts/deploy.sh"
   },
   "devDependencies": {

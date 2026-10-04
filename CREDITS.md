@@ -7,9 +7,9 @@ ownership is claimed. Credits never appear on the cards themselves.
 
 ## Substitutions
 
-- **`thude` (Thude) -> Rlain.** The Coppermind has no usable art of Thude. The card keeps the id
-  `thude` (Singer archer slot) but is displayed as **Rlain**, a Listener, using his portrait by
-  Marie Seeberger. The roster/engine should show the display name "Rlain" for id `thude`.
+- **Thude -> Rlain.** The Coppermind has no usable art of Thude, so the Singers' second Archer
+  is **Rlain** (a Listener) instead, with character id `rlain` (card `black-archer-rlain`),
+  using his portrait by Marie Seeberger.
 
 ## Character portraits
 
@@ -34,11 +34,11 @@ Coppermind file pages: `https://coppermind.net/wiki/File:<file>`.
 | Leshwi | `packages/client/public/art/characters/leshwi.webp` | Jazzy-kandra | https://www.instagram.com/p/CEBlMXkHZp4/ | https://coppermind.net/wiki/File:Leshwi_by_Jazzy-kandra.jpg | (c) Jazzy-kandra; character (c) Dragonsteel Entertainment |
 | Lezian (the Pursuer) | `packages/client/public/art/characters/lezian.webp` | rspixart | https://rspixart.tumblr.com/post/639585754201391104/argent-commissioned-the-pursuerlezian-it-was | https://coppermind.net/wiki/File:The_Pursuer_by_rspixart.png | (c) rspixart; character (c) Dragonsteel Entertainment |
 | Venli | `packages/client/public/art/characters/venli.webp` | taratjah | https://www.instagram.com/p/BiH0uV8gln0/ | https://coppermind.net/wiki/File:Venli_-_XVI._The_Tower_.jpg | (c) taratjah; character (c) Dragonsteel Entertainment |
-| Rlain (replaces Thude) | `packages/client/public/art/characters/thude.webp` | Marie Seeberger | https://lamaery.tumblr.com/post/183826979490/bridge-4-part-one-teft-the-lopen-rlain-and | https://coppermind.net/wiki/File:Rlain_Portrait_by_Marie_Seeberger.jpg | (c) Marie Seeberger; character (c) Dragonsteel Entertainment |
+| Rlain | `packages/client/public/art/characters/rlain.webp` | Marie Seeberger | https://lamaery.tumblr.com/post/183826979490/bridge-4-part-one-teft-the-lopen-rlain-and | https://coppermind.net/wiki/File:Rlain_Portrait_by_Marie_Seeberger.jpg | (c) Marie Seeberger; character (c) Dragonsteel Entertainment |
 | Hoid (Wit) | `packages/client/public/art/characters/hoid.webp` | taratjah | https://www.instagram.com/p/BuPHRjQnpc_/ | https://coppermind.net/wiki/File:Wit-Fool_by_taratjah.jpg | (c) taratjah; character (c) Dragonsteel Entertainment |
 
 Notes: the taratjah images are from the artist's Stormlight Tarot series. Moash, Lopen, Lunamor,
-Leshwi, Lezian, Raboniel and Rlain/Thude are cropped from larger illustrations. Artist
+Leshwi, Lezian, Raboniel and Rlain are cropped from larger illustrations. Artist
 attributions are as recorded on the Coppermind file pages.
 
 ## Original artwork

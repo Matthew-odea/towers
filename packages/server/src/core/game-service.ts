@@ -30,6 +30,7 @@ import type {
   GameRecord,
   GameStore,
   StatsStore,
+  TestHooks,
 } from './types';
 
 export const BOT_STEP_CAP = 500;
@@ -44,6 +45,8 @@ export interface GameServiceDeps {
   out: Broadcaster;
   clock?: Clock;
   log?: (msg: string, err?: unknown) => void;
+  /** Deterministic games for e2e tests (local server with TOWERS_TEST=1 only). */
+  testHooks?: TestHooks;
 }
 
 interface Step {
@@ -100,8 +103,10 @@ export class GameService {
   private readonly out: Broadcaster;
   private readonly clock: Clock;
   private readonly log: (msg: string, err?: unknown) => void;
+  private readonly hooks: TestHooks | undefined;
 
   constructor(deps: GameServiceDeps) {
+    this.hooks = deps.testHooks;
     this.games = deps.games;
     this.connections = deps.connections;
     this.stats = deps.stats;
@@ -163,6 +168,8 @@ export class GameService {
         return this.onChat(connId, m);
       case 'stats':
         return this.onStats(connId, m);
+      case 'rematch':
+        return this.onRematch(connId, m);
       default:
         return this.fail(connId, 'unknown_type', `Unknown message type "${String((msg as { t: unknown }).t).slice(0, 30)}".`);
     }
@@ -181,9 +188,18 @@ export class GameService {
   private async onCreate(connId: string, m: { vsBot?: unknown }): Promise<void> {
     const conn = await this.connections.get(connId);
     if (!conn?.username) return this.fail(connId, 'need_hello', 'Say hello with a username first.');
-    const vsBot = m.vsBot === true;
+    const made = this.newGame(conn.username, m.vsBot === true);
+    if (!(await this.games.put(made.rec, null))) {
+      // Game ids are random; a collision is effectively impossible.
+      return this.fail(connId, 'busy', 'Could not create the game, try again.');
+    }
+    await this.seatCreator(conn, made);
+  }
+
+  /** A fresh game record with `username` in a (random) seat, plus the bot's opening steps. */
+  private newGame(username: string, vsBot: boolean): { rec: GameRecord; seat: PlayerId; token: string; steps: Step[] } {
     const now = this.clock.now();
-    const seat = randomSeat();
+    const seat = this.hooks?.creatorSeat ?? randomSeat();
     const token = randomToken();
     const rec: GameRecord = {
       id: randomGameId(),
@@ -195,24 +211,69 @@ export class GameService {
       chat: [],
       commits: { red: {}, black: {} },
       statsRecorded: false,
+      rematch: null,
       createdAt: now,
       expiresAt: this.expiry(),
     };
-    rec.seats[seat] = { name: conn.username, token, bot: false };
+    rec.seats[seat] = { name: username, token, bot: false };
     let steps: Step[] = [];
     if (vsBot) {
       rec.seats[otherSeat(seat)] = { name: 'Bot', token: randomToken(), bot: true };
       rec.state = this.newMatch(rec);
       steps = this.runBots(rec);
     }
-    if (!(await this.games.put(rec, null))) {
-      // Game ids are random; a collision is effectively impossible.
-      return this.fail(connId, 'busy', 'Could not create the game, try again.');
-    }
+    return { rec, seat, token, steps };
+  }
+
+  /** Attaches the creating connection to a newly stored game and sends the opening messages. */
+  private async seatCreator(
+    conn: ConnectionRecord,
+    made: { rec: GameRecord; seat: PlayerId; token: string; steps: Step[] },
+  ): Promise<void> {
+    const { rec, seat, token, steps } = made;
     await this.connections.put({ ...conn, gameId: rec.id, seat });
-    await this.deliver(connId, { t: 'joined', gameId: rec.id, seat, seatToken: token });
+    await this.deliver(conn.id, { t: 'joined', gameId: rec.id, seat, seatToken: token });
     if (steps.length) await this.broadcastSteps(rec, steps);
+    else if (rec.state) await this.sendCurrent(conn.id, rec.id, token);
     await this.broadcastPresence(rec.id, rec);
+  }
+
+  /**
+   * Rematch: the first player to ask creates the follow-up game (same mode) and the finished
+   * game points at it; the other player's request joins that game. The finished game's
+   * connections are told so the opponent can follow.
+   */
+  private async onRematch(connId: string, m: { gameId?: unknown; seatToken?: unknown }): Promise<void> {
+    const gameId = this.validId(m.gameId);
+    if (!gameId || typeof m.seatToken !== 'string') return this.fail(connId, 'bad_message', 'Missing game id or seat token.');
+    const token = m.seatToken;
+    const conn = await this.connections.get(connId);
+    if (!conn?.username) return this.fail(connId, 'need_hello', 'Say hello with a username first.');
+    const old = await this.games.get(gameId);
+    if (!old || old.expiresAt * 1000 < this.clock.now()) return this.fail(connId, 'not_found', 'No such game (it may have expired).');
+    const seat = SEATS.find((s) => old.seats[s]?.token === token && !old.seats[s]?.bot);
+    if (!seat) return this.fail(connId, 'bad_seat', 'That seat token does not match this game.');
+    if (old.state?.phase !== 'matchOver') return this.fail(connId, 'not_over', 'The match is not over yet.');
+
+    let next = old.rematch ?? null;
+    if (!next) {
+      const made = this.newGame(conn.username, old.vsBot);
+      if (!(await this.games.put(made.rec, null))) return this.fail(connId, 'busy', 'Could not create the game, try again.');
+      const linked = await this.mutate(gameId, (rec) => {
+        if (rec.rematch) return { rec, out: rec.rematch, write: false };
+        rec.rematch = made.rec.id;
+        return { rec, out: made.rec.id };
+      });
+      if (linked.fail) return this.fail(connId, linked.fail.code, linked.fail.message);
+      if (linked.out === made.rec.id) {
+        await this.seatCreator(conn, made);
+        await this.broadcastTo(gameId, (c) => (c.id === connId ? null : { t: 'rematch', gameId, next: made.rec.id, by: seat }));
+        return;
+      }
+      // Lost a race with the opponent: join their game (ours is left to expire).
+      next = linked.out;
+    }
+    return this.onJoin(connId, { gameId: next });
   }
 
   private async onJoin(connId: string, m: { gameId?: unknown; seatToken?: unknown }): Promise<void> {
@@ -339,10 +400,14 @@ export class GameService {
   // ---- game logic ------------------------------------------------------
 
   private newMatch(rec: GameRecord): MatchState {
-    return createMatch({
-      seed: globalThis.crypto.randomUUID(),
+    const h = this.hooks;
+    const state = createMatch({
+      seed: h?.seed ?? globalThis.crypto.randomUUID(),
       names: { red: rec.seats.red!.name, black: rec.seats.black!.name },
+      firstPlayer: h?.firstPlayer,
     });
+    if (h?.dice?.length) state.diceQueue = [...h.dice];
+    return state;
   }
 
   /** Applies bot actions until a human decision is pending. Mutates rec. */

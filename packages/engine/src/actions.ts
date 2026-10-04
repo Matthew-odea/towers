@@ -321,6 +321,18 @@ function handleEndTurn(ctx: HandlerCtx, a: Loose<A<'endTurn'>>): string | null {
   return null;
 }
 
+/**
+ * Ends the turn automatically once the turn player has 0 CP and no engagement is in progress:
+ * every turn action costs at least 1 CP, so End turn (or Concede) would be the only choice left.
+ */
+export function autoEndTurn(ctx: HandlerCtx): void {
+  const s = ctx.s;
+  if (s.phase !== 'play' || s.engagement || !s.turn || s.turn.cp > 0) return;
+  const player = s.turn.player;
+  emit(ctx, { type: 'turnEnded', player, auto: true });
+  startTurn(ctx, other(player));
+}
+
 function handleConcede(ctx: HandlerCtx, a: Loose<A<'concede'>>): string | null {
   if (ctx.s.phase === 'matchOver') return 'The match is over.';
   if (ctx.dryRun) return null;

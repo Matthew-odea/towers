@@ -112,8 +112,13 @@ export function chooseBotAction(state: MatchState, player: PlayerId): Action | n
 - `PendingDecision` tells each client exactly what (if anything) it must do now: `setup`,
   `turn` (free actions), `defend`, `reroll` (with the usable reroll options), `pressOrBreak`,
   `casualties` (chooser, count, eligible card ids, whose cards), `retreat` (legal hexes),
-  `roundOver`, `matchOver`. Decisions with exactly one legal choice are auto-resolved by the
-  engine so humans are never asked a question with one answer.
+  `matchOver`. Decisions with exactly one legal choice are auto-resolved by the engine so
+  humans are never asked a question with one answer.
+- There is no round-over decision: when a round is won the engine goes straight into the next
+  round's `setup` (or `matchOver`). Clients show the result from the `roundWon` event and the
+  `roundResults` history in the state.
+- A turn ends by itself once the turn player has 0 CP and no engagement is in progress
+  (`turnEnded` with `auto: true`); clients never need to send `endTurn` at 0 CP.
 - The engine author documents the final API in `docs/ENGINE.md`.
 
 ## Wire protocol (JSON over WebSocket)
@@ -125,16 +130,37 @@ Client → server:
 { t: 'join', gameId, seatToken? }                          -> { t: 'joined', gameId, seat, seatToken } | error 'full' | 'not_found'
 { t: 'action', gameId, seatToken, action, expectedVersion }-> broadcast 'state' | error
 { t: 'chat', gameId, seatToken, text }                     -> broadcast 'chat'
-{ t: 'stats', username }                                   -> { t: 'stats', stats }
+{ t: 'stats', username }                                   -> { t: 'stats', username, stats: PlayerStats }
+{ t: 'rematch', gameId, seatToken }                        -> { t: 'joined', gameId: <new>, seat, seatToken } | error 'not_over'
 { t: 'ping' }                                              -> { t: 'pong' }
 ```
 Server → client:
 ```
 { t: 'state', gameId, view: PlayerView, events: GameEvent[], version }
-{ t: 'chat', gameId, from, text, ts }
+{ t: 'chat', gameId, from: PlayerId, name, text, ts }       // from = seat, name = display name
 { t: 'presence', gameId, players: { red: { name, connected, bot }, black: { ... } } }
+{ t: 'rematch', gameId, next, by }                         // the finished game's follow-up game
 { t: 'error', code, message }
 ```
+- The protocol types live in `packages/server/src/core/protocol.ts` (`@towers/server/protocol`);
+  the client imports them with `import type`.
+- `hello` is required before `create` and before a first `join`; a `join` that reclaims a seat
+  with a valid `seatToken` works without it.
+- **Waiting lobby.** A human-vs-human match is created only when the second player joins (the
+  engine needs both names), so the creator receives `joined` and `presence` but **no `state`**
+  until then. Presence reports an empty seat as `{ name: null, connected: false, bot: false }`;
+  the client shows the invite link while the opponent seat is empty. Bot games start at once.
+- Presence is broadcast on create, join and disconnect. The bot seat is always connected with
+  `bot: true`. A second tab that reclaims a seat does not kick the first; both get updates.
+- Chat history (last 50) is replayed to every joining or reconnecting connection; clients
+  de-duplicate lines they already have.
+- **Rematch.** After `matchOver`, the first player to send `rematch` creates the follow-up game
+  (same mode, new random seats) and the finished game records its id; the server tells the
+  finished game's other connections with `{ t: 'rematch', next }`, and the other player's
+  `rematch` joins that same game. Clients open a new connection (and a fresh game screen) for it.
+- Error codes: `bad_json`, `too_large`, `bad_message`, `unknown_type`, `need_hello`,
+  `bad_username`, `not_found`, `full`, `bad_seat`, `not_started`, `stale`, `illegal`,
+  `bad_chat`, `not_over`, `busy`, `internal`.
 - Creator's seat is random. Second joiner takes the other seat. A `seatToken` (random, stored
   in the browser's localStorage per game) lets a player reconnect to their seat. A third
   person gets `full`.
@@ -179,10 +205,23 @@ Server → client:
   conservation, no shared hexes, CP within bounds, caps respected, pending decision always
   actionable, every match terminates under a turn cap in simulation only).
 - Server: protocol tests with real ws clients against the local server, incl. a full bot game.
-- E2E: Playwright (chromium) against `npm run dev`: two browser contexts create/join and play
-  through setup into an engagement; a vs-bot game; screenshots saved to `test-results/`.
+- E2E: Playwright (chromium, 1 worker; `playwright.config.ts` at the root, specs in `e2e/`).
+  The config starts its own local server on :8790 and Vite on :5190 so it never clashes with
+  `npm run dev`. Run one spec per command: `npm run e2e -- e2e/pvp.spec.ts` (two contexts:
+  lobby, join, setup, a full engagement through every decision, chat, reload keeps the seat,
+  rematch and stats), `e2e/bot.spec.ts` (online bot game, three full turns; stats page) and
+  `e2e/offline.spec.ts` (server unreachable: Play the bot falls back to `#/offline`).
+  Screenshots go to `test-results/screens/`.
+- **Test mode** (local server only, never the Lambda): `TOWERS_TEST=1` makes every match use a
+  fixed seed (`TOWERS_TEST_SEED`, default `e2e`), gives the creator a fixed seat
+  (`TOWERS_TEST_SEAT`, default red), fixes the round-1 first player (`TOWERS_TEST_FIRST`) and
+  queues opening dice (`TOWERS_TEST_DICE`, e.g. `1,2,1,3,4`). Stats then go to
+  `.data/stats.e2e.json`.
 
 ## Dev
 - `npm run dev`: local server on :8787 (HTTP + WS at `/ws`) + Vite on :5173 (proxying `/ws`
-  and `/config.json` to :8787).
+  and `/config.json` to :8787, keeping the Vite host so the socket goes through the proxy).
+  Ports: `TOWERS_SERVER_PORT` (or `PORT`) for the server, `TOWERS_CLIENT_PORT` for Vite.
+- `packages/client/dev.html` (dev server only, not in the build) renders the game screen
+  against an in-browser engine with scenarios, e.g. `/dev.html?seat=black&scenario=reroll`.
 - `npm start`: build client, serve everything from :8787 (LAN: share `http://<lan-ip>:8787`).

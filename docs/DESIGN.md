@@ -96,7 +96,7 @@ probably on a voice call.
 | Commander | `dalinar` Dalinar, `jasnah` Jasnah | `raboniel` Raboniel, `eshonai` Eshonai |
 | Shardbearer | `kaladin` Kaladin, `adolin` Adolin | `szeth` Szeth, `moash` Moash |
 | Cavalry | `lift` Lift, `lopen` Lopen | `leshwi` Leshwi, `lezian` Lezian |
-| Archer | `lunamor` Lunamor, `shallan` Shallan | `venli` Venli, `thude` Thude |
+| Archer | `lunamor` Lunamor, `shallan` Shallan | `venli` Venli, `rlain` Rlain |
 | Wit | `hoid` Hoid | `hoid` Hoid |
 
 If a character has no usable art, swap in another fitting character (same faction and role) and

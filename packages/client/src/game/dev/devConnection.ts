@@ -242,7 +242,7 @@ export function createDevConnection(opts: DevOptions = {}): GameConnection {
       schedule();
     },
     sendChat(text: string) {
-      const m = { from: state.names[seat], text, ts: Date.now() };
+      const m = { from: seat, name: state.names[seat], text, ts: Date.now() };
       chat.push(m);
       for (const l of listeners) l.onChat?.(m);
     },

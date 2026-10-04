@@ -64,7 +64,9 @@ export interface Ctx {
 export const CAP = 3;
 
 export function now(): number {
-  return typeof performance !== 'undefined' ? performance.now() : Date.now();
+  // No Node/DOM typings in the engine: reach the runtime's clock through globalThis.
+  const perf = (globalThis as { performance?: { now(): number } }).performance;
+  return perf ? perf.now() : Date.now();
 }
 
 export function makeCtx(s: AnyState, me: PlayerId, w: Tuning = DEFAULT_TUNING): Ctx {

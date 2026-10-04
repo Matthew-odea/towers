@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import type { GameConnection } from '../net/types';
 import { useChat } from './useConnection';
 
-export function ChatDock({ conn, myName }: { conn: GameConnection; myName: string }) {
+export function ChatDock({ conn }: { conn: GameConnection }) {
   const [open, setOpen] = useState(false);
   const [text, setText] = useState('');
   const { messages, unread } = useChat(conn, open);
@@ -24,8 +24,8 @@ export function ChatDock({ conn, myName }: { conn: GameConnection; myName: strin
         <div className="chat-panel">
           <div className="chat-list" ref={list}>
             {messages.map((m, i) => (
-              <p key={i} className={m.from === myName ? 'chat-line mine' : 'chat-line'}>
-                <span className="chat-from">{m.from}</span> {m.text}
+              <p key={i} className={`chat-line chat-line--${m.from} ${m.from === conn.seat ? 'mine' : ''}`}>
+                <span className="chat-from">{m.name}</span> {m.text}
               </p>
             ))}
           </div>

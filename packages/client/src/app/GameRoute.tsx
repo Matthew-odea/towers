@@ -36,19 +36,19 @@ export function GameRoute({ gameId }: { gameId: string }) {
 
   const rematch = useCallback(async () => {
     if (!state || !('conn' in state)) return;
-    const vsBot = !!(state.conn.getPresence()?.[state.conn.seat === 'red' ? 'black' : 'red']?.bot);
     try {
-      const next = await WebSocketTransport.create(name, vsBot);
+      // The first player to ask creates the follow-up game; the other joins the same one.
+      const next = await WebSocketTransport.rematch(name, { gameId: state.conn.gameId, seat: state.conn.seat });
       stashConnection(next);
       navigate(gamePath(next.gameId));
     } catch { /* stay on the finished game */ }
   }, [state, name]);
 
   if (!name) return <NameGate onDone={setName} />;
-  if (!state) return <main className="landing" />;
+  if (!state) return <main className="landing storm-field" />;
   if ('error' in state) {
     return (
-      <main className="landing">
+      <main className="landing storm-field">
         <p className="quiet">{state.error}</p>
         <a className="stats-link" href="#/">Back</a>
       </main>
@@ -57,7 +57,6 @@ export function GameRoute({ gameId }: { gameId: string }) {
   return (
     <GameShell
       conn={state.conn}
-      myName={name}
       online
       onLeave={() => navigate('#/')}
       onRematch={() => void rematch()}
@@ -72,7 +71,6 @@ export function OfflineRoute() {
   return (
     <GameShell
       conn={conn}
-      myName={name}
       online={false}
       onLeave={() => navigate('#/')}
       onRematch={() => setConn(new LocalTransport({ name }))}

@@ -2,6 +2,7 @@ import { describe, expect, test } from 'vitest';
 import {
   activationProbability,
   applyAction,
+  buildArmy,
   chooseBotAction,
   createMatch,
   currentEngagementOdds,
@@ -137,6 +138,66 @@ describe('pendingDecision', () => {
       expect(r.errors).toEqual([]);
       expect(r.winner).not.toBeNull();
     }
+  });
+});
+
+describe('roster', () => {
+  test("the Singers' Archers are Venli and Rlain", () => {
+    const ids = buildArmy('black').filter((c) => c.kind === 'archer').map((c) => c.id);
+    expect(ids).toEqual(['black-archer-venli', 'black-archer-rlain']);
+  });
+});
+
+describe('automatic end of turn at 0 CP', () => {
+  test('spending the last CP ends the turn with an auto turnEnded event', () => {
+    const s = buildState({ board: { '0,1': ['red:L7'] }, cp: 1 });
+    const r = mustApply(s, { type: 'move', player: 'red', cardIds: [c('red:L7')], from: '0,1', path: ['0,0'] });
+    const ended = r.events.find((e) => e.type === 'turnEnded');
+    expect(ended).toEqual({ type: 'turnEnded', player: 'red', auto: true });
+    expect(r.events.map((e) => e.type)).toContain('turnStarted');
+    expect(r.state.turn!.player).toBe('black');
+    expect(r.state.turn!.cp).toBe(4);
+    expect(pendingDecision(r.state)).toMatchObject({ kind: 'turn', player: 'black' });
+  });
+
+  test('a turn with CP left does not end on its own', () => {
+    const s = buildState({ board: { '0,1': ['red:L7'] }, cp: 2 });
+    const r = mustApply(s, { type: 'move', player: 'red', cardIds: [c('red:L7')], from: '0,1', path: ['0,0'] });
+    expect(r.events.some((e) => e.type === 'turnEnded')).toBe(false);
+    expect(r.state.turn).toMatchObject({ player: 'red', cp: 1 });
+  });
+
+  test('an Engage with the last CP waits for the engagement to end, then ends the turn', () => {
+    const s = buildState({ board: { '0,1': ['red:L7'], '0,0': ['black:L2', 'black:L3'] }, cp: 1, dice: [3, 4] });
+    let r = mustApply(s, engage('red', '0,0', ['red:L7']));
+    expect(r.state.turn!.player).toBe('red');
+    expect(r.state.turn!.cp).toBe(0);
+    expect(pendingDecision(r.state).kind).toBe('defend');
+    r = mustApply(r.state, defend('black', ['black:L2']));
+    // Red 7 activates, Black 2 does not: attacker wins; Black picks its casualty.
+    let p = pendingDecision(r.state);
+    const all = [...r.events];
+    for (let i = 0; i < 10 && p.kind !== 'turn'; i++) {
+      let a: Action;
+      if (p.kind === 'casualties') a = { type: 'chooseCasualties', player: p.player, cardIds: p.eligible.slice(0, p.count) };
+      else if (p.kind === 'retreat') a = { type: 'retreat', player: p.player, to: null };
+      else if (p.kind === 'reroll') a = { type: 'passReroll', player: p.player };
+      else if (p.kind === 'pressOrBreak') a = { type: 'breakOff', player: p.player };
+      else throw new Error(`unexpected ${p.kind}`);
+      r = mustApply(r.state, a);
+      all.push(...r.events);
+      p = pendingDecision(r.state);
+    }
+    expect(all.map((e) => e.type)).toContain('engagementEnded');
+    expect(all.find((e) => e.type === 'turnEnded')).toEqual({ type: 'turnEnded', player: 'red', auto: true });
+    expect(all.findIndex((e) => e.type === 'turnEnded')).toBeGreaterThan(all.findIndex((e) => e.type === 'engagementEnded'));
+    expect(pendingDecision(r.state)).toMatchObject({ kind: 'turn', player: 'black', cp: 4 });
+  });
+
+  test('validateAction does not auto-end (dry run only)', () => {
+    const s = buildState({ board: { '0,1': ['red:L7'] }, cp: 1 });
+    expect(validateAction(s, { type: 'move', player: 'red', cardIds: [c('red:L7')], from: '0,1', path: ['0,0'] })).toBeNull();
+    expect(s.turn!.player).toBe('red');
   });
 });
 

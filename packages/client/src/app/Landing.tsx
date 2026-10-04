@@ -27,7 +27,7 @@ export function Landing() {
   };
 
   return (
-    <main className="landing">
+    <main className="landing storm-field">
       <h1 className="landing-title">Towers</h1>
       <form className="landing-form" onSubmit={(e) => { e.preventDefault(); void start(false); }}>
         <input

@@ -14,6 +14,8 @@ export type ClientMessage =
   | { t: 'action'; gameId: string; seatToken: string; action: Action; expectedVersion: number }
   | { t: 'chat'; gameId: string; seatToken: string; text: string }
   | { t: 'stats'; username: string }
+  /** After the match is over: start (or join) the follow-up game. Replies like create/join. */
+  | { t: 'rematch'; gameId: string; seatToken: string }
   | { t: 'ping' };
 
 export interface PresenceEntry {
@@ -56,6 +58,7 @@ export type ErrorCode =
   | 'stale'
   | 'illegal'
   | 'bad_chat'
+  | 'not_over'
   | 'busy'
   | 'internal';
 
@@ -66,6 +69,8 @@ export type ServerMessage =
   | { t: 'chat'; gameId: string; from: PlayerId; name: string; text: string; ts: number }
   | { t: 'presence'; gameId: string; players: Presence }
   | { t: 'stats'; username: string; stats: PlayerStats }
+  /** Sent to a finished game's connections when a player starts the rematch game `next`. */
+  | { t: 'rematch'; gameId: string; next: string; by: PlayerId }
   | { t: 'pong' }
   | { t: 'error'; code: ErrorCode; message: string };
 

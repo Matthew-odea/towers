@@ -1,5 +1,5 @@
 // applyAction, validateAction, viewFor, pendingDecision.
-import { dispatch } from './actions';
+import { autoEndTurn, dispatch } from './actions';
 import { defenderMax, rerollOptions } from './engagement';
 import { CP_ACTION_TYPES, CP_CAP_PER_TYPE, PLAYERS, deepClone, isPlayer, stackAt } from './state';
 import type {
@@ -30,6 +30,7 @@ export function applyAction(state: MatchState, action: Action): ApplyResult {
     const ctx: HandlerCtx = { s: deepClone(state), events: [], dryRun: false };
     const err = dispatch(ctx, action);
     if (err) return { ok: false, error: err };
+    autoEndTurn(ctx);
     ctx.s.seq += 1;
     return { ok: true, state: ctx.s, events: ctx.events };
   } catch (e) {

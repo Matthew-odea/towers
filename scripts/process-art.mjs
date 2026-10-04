@@ -28,7 +28,7 @@ const JOBS = {
   leshwi: { file: 'leshwi2.jpg', box: { left: 150, top: 0, width: 640, height: 896 } },
   lezian: { file: 'lezian2.png', box: { left: 430, top: 200, width: 1127, height: 1578 } },
   venli: { file: 'venli.jpg', box: tarot },
-  thude: { file: 'rlain.jpg', box: { left: 0, top: 0, width: 1150, height: 1610 } }, // swap: Thude -> Rlain
+  rlain: { file: 'rlain.jpg', box: { left: 0, top: 0, width: 1150, height: 1610 } }, // Singers' second Archer (substitution, see CREDITS.md)
   hoid: { file: 'hoid.jpg', box: { left: 50, top: 60, width: 1088, height: 1523 } },
 };
 
