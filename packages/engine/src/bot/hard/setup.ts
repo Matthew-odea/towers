@@ -1,6 +1,7 @@
 // Hard bot setup (open, turn-based: RULINGS §4). One placement per call.
 import { HOME_EDGE, TOWER, neighbors, other, parseHex } from '../../hex';
-import { nextSetupPlacer, setupEligible } from '../../setup';
+import { nextSetupPlacer, setupEligible, setupHexWithRoom } from '../../setup';
+import { hasRoom } from '../../state';
 import type { Action, AnyState, PlayerId } from '../../types';
 import { activationWays } from '../values';
 import type { HardConfig } from './config';
@@ -19,7 +20,7 @@ export function hardSetup(s: AnyState, me: PlayerId, cfg: HardConfig): Action | 
   const foe = other(me);
   const eligible = setupEligible(s, me);
   if (eligible.length === 0) return null;
-  const place = (cardId: string, hex: string): Action => ({ type: 'setupPlace', player: me, placements: [{ cardId, hex }] });
+  const place = (cardId: string, hex: string): Action => ({ type: 'setupPlace', player: me, placements: [{ cardId, hex: setupHexWithRoom(s, me, hex) }] });
   const kind = (id: string) => s.cards[id].kind;
   const ways = (id: string) => activationWays(s.cards[id]);
   const sides = HOME_EDGE[me].filter((h) => h !== tower);
@@ -60,7 +61,7 @@ export function hardSetup(s: AnyState, me: PlayerId, cfg: HardConfig): Action | 
     return place(eligible[0], sh);
   }
   const escortsPlaced = mine.filter((p) => p.hex === tower).length;
-  if (o.strike !== 'tower' && escortsPlaced < o.escorts) {
+  if (o.strike !== 'tower' && escortsPlaced < o.escorts && hasRoom(s, tower, 1)) {
     const heavy = eligible.filter((id) => kind(id) === 'heavy').sort((a, b) => ways(b) - ways(a));
     const light = eligible.filter((id) => kind(id) === 'light').sort((a, b) => ways(b) - ways(a));
     const escort = heavy[0] ?? light[0];

@@ -8,7 +8,7 @@ import { resolveDice } from '../combat';
 import { pendingDecision, validateAction } from '../core';
 import { HOME_EDGE, TOWER, distance, neighbors, other } from '../hex';
 import { eligibleAttackers, engageableTargets, fortifiableHexes, reserveDeployable } from '../queries';
-import { nextSetupPlacer, setupEligible } from '../setup';
+import { nextSetupPlacer, setupEligible, setupHexWithRoom } from '../setup';
 import { hexesOf, stackAt } from '../state';
 import type { Action, AnyState, HexKey, PendingDecision, PlayerId } from '../types';
 import type { Rand } from './random';
@@ -68,7 +68,7 @@ function easySetup(s: AnyState, me: PlayerId, rand: Rand): Action | null {
   if (!n || n.player !== me) return null;
   const eligible = setupEligible(s, me);
   if (eligible.length === 0) return null;
-  const place = (cardId: string, hex: HexKey): Action => ({ type: 'setupPlace', player: me, placements: [{ cardId, hex }] });
+  const place = (cardId: string, hex: HexKey): Action => ({ type: 'setupPlace', player: me, placements: [{ cardId, hex: setupHexWithRoom(s, me, hex) }] });
   const tower = TOWER[me];
   if (n.step === 'commander') return place(eligible[0], tower);
   const mine = s.setup[me].placements.filter((p) => kindOf(s, p.cardId) !== 'commander');

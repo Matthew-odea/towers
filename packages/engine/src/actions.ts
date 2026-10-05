@@ -16,7 +16,9 @@ import {
   PLAYERS,
   emit,
   enterable,
+  fullStackError,
   getCard,
+  hasRoom,
   isFortified,
   isPlayer,
   normalize,
@@ -70,6 +72,7 @@ function handleSetupPlace(ctx: HandlerCtx, a: Loose<A<'setupPlace'>>): string | 
   if (!isHex(hex) || !HOME_EDGE[a.player].includes(hex)) {
     return `${cardName(card)} must be placed on your home edge (${HOME_EDGE[a.player].join(', ')}).`;
   }
+  if (!hasRoom(s, hex, 1)) return fullStackError(hex);
   if (ctx.dryRun) return null;
 
   s.setup[a.player].placements.push({ cardId, hex });
@@ -124,6 +127,8 @@ function handleMove(ctx: HandlerCtx, a: Loose<A<'move'>>): string | null {
   for (const h of path) if (!isHex(h)) return `"${h}" is not a hex on the board.`;
   if (!areAdjacent(from, path[0])) return `${path[0]} is not adjacent to ${from}.`;
   if (!enterable(s, a.player, path[0])) return `Hex ${path[0]} holds enemy cards; clear it by engaging first.`;
+  // Every hex the group enters needs room, including the one a Cavalry move passes through.
+  if (!hasRoom(s, path[0], ids.length)) return fullStackError(path[0]);
   if (path.length === 2) {
     const nonCav = ids.find((id) => s.cards[id].kind !== 'cavalry');
     if (nonCav) return `Only an all-Cavalry group may move 2 hexes (${label(s, nonCav)} is not Cavalry).`;
@@ -132,6 +137,7 @@ function handleMove(ctx: HandlerCtx, a: Loose<A<'move'>>): string | null {
     if (path[1] === from) return 'A Cavalry 2-hex move cannot return to its starting hex.';
     if (s.terrain[path[1]] !== 'plains') return `A Cavalry 2-hex move can only continue into Plains (${path[1]} is ${s.terrain[path[1]]}).`;
     if (!enterable(s, a.player, path[1])) return `Hex ${path[1]} holds enemy cards; clear it by engaging first.`;
+    if (!hasRoom(s, path[1], ids.length)) return fullStackError(path[1]);
   }
   const costErr = checkCost(s, 'move', 1);
   if (costErr) return costErr;
@@ -167,6 +173,7 @@ function handleWithdraw(ctx: HandlerCtx, a: Loose<A<'withdraw'>>): string | null
     if (!areAdjacent(from, a.to)) return `${a.to} is not adjacent to ${from}.`;
     if (!enterable(s, a.player, a.to)) return `Hex ${a.to} holds enemy cards.`;
     if (distance(a.to, tower) >= distance(from, tower)) return `Withdraw must move strictly closer to your Tower (${tower}).`;
+    if (!hasRoom(s, a.to, ids.length)) return fullStackError(a.to);
   }
   const costErr = checkCost(s, 'withdraw', 1);
   if (costErr) return costErr;
@@ -199,6 +206,7 @@ function handleDeploy(ctx: HandlerCtx, a: Loose<A<'deploy'>>): string | null {
   }
   const tower = TOWER[a.player];
   if (stackOwner(s, tower) === other(a.player)) return 'You cannot Deploy while enemy cards occupy your Tower.';
+  if (!hasRoom(s, tower, ids.length)) return fullStackError(tower);
   const costErr = checkCost(s, 'deploy', 1);
   if (costErr) return costErr;
   if (ctx.dryRun) return null;
@@ -258,6 +266,7 @@ function handleReinforce(ctx: HandlerCtx, a: Loose<A<'reinforce'>>): string | nu
   const hex = a.hex;
   if (stackOwner(s, hex) !== a.player || !isFortified(s, hex)) return `Hex ${hex} is not one of your Fortified hexes.`;
   if (!hasSupply(s, a.player, hex)) return `Hex ${hex} has no supply line to your Tower.`;
+  if (!hasRoom(s, hex, 1)) return fullStackError(hex);
   const costErr = checkCost(s, 'reinforce', 3);
   if (costErr) return costErr;
   if (ctx.dryRun) return null;
@@ -279,6 +288,7 @@ export function spawnHexError(s: PublicState, player: PlayerId, hex: unknown): s
     if (areAdjacent(hex, TOWER[p])) return 'Wit cannot be Spawned adjacent to a Tower.';
   }
   if (!enterable(s, player, hex)) return `Hex ${hex} holds enemy cards.`;
+  if (!hasRoom(s, hex, 1)) return fullStackError(hex);
   return null;
 }
 

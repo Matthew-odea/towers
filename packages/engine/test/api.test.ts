@@ -256,16 +256,17 @@ describe('bot levels', () => {
     }
   });
 
-  test('medium setup: Commanders on the Tower, Heavy escorts, one strike group; reacts to a massed enemy flank', () => {
+  test('medium setup: Commanders and two Heavy escorts fill the Tower; one strike group on the flank away from a massed enemy', () => {
     let s = createMatch({ seed: 'medium-setup', firstPlayer: 'black' });
-    // Black masses Shardbearers and Cavalry on its 0,-2 corner.
+    // Black masses Shardbearers and Cavalry on its 0,-2 corner (a full stack), Archers on 2,-2.
     const blackPlan = ['black:S1', 'black:S2', 'black:V1', 'black:V2', 'black:A1', 'black:A2'].map(c);
     while (s.phase === 'setup') {
       const d = pendingDecision(s);
       if (d.kind !== 'setup') break;
       let a: Action;
       if (d.player === 'black' && d.step === 'troop') {
-        a = { type: 'setupPlace', player: 'black', placements: [{ cardId: blackPlan.shift()!, hex: '0,-2' }] };
+        const hex = blackPlan.length > 2 ? '0,-2' : '2,-2';
+        a = { type: 'setupPlace', player: 'black', placements: [{ cardId: blackPlan.shift()!, hex }] };
       } else a = chooseBotAction(viewFor(s, d.player), d.player)!;
       s = mustApply(s, a).state;
     }
@@ -274,7 +275,7 @@ describe('bot levels', () => {
     const troops = red.filter((x) => s.cards[x.cardId].kind !== 'commander');
     expect(troops).toHaveLength(6);
     const escorts = troops.filter((x) => x.hex === '-1,2');
-    expect(escorts).toHaveLength(3);
+    expect(escorts).toHaveLength(2);
     expect(escorts.every((x) => s.cards[x.cardId].kind === 'heavy')).toBe(true);
     const strikeHexes = new Set(troops.filter((x) => x.hex !== '-1,2').map((x) => x.hex));
     // Black massed on its left flank (0,-2), so Red strikes down the other flank (0,2).

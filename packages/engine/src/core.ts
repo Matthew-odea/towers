@@ -1,7 +1,7 @@
 // applyAction, validateAction, viewFor, pendingDecision.
 import { autoEndTurn, dispatch } from './actions';
 import { defenderMax, rerollOptions } from './engagement';
-import { nextSetupPlacer, setupCounters, setupEligible, setupHexes } from './setup';
+import { nextSetupPlacer, openSetupHexes, setupCounters, setupEligible } from './setup';
 import { CP_ACTION_TYPES, CP_CAP_PER_TYPE, deepClone, isPlayer, stackAt } from './state';
 import type {
   Action,
@@ -76,7 +76,7 @@ export function pendingDecision(s: AnyState): PendingDecision {
       player: n.player,
       step: n.step,
       eligible: setupEligible(s, n.player),
-      hexes: setupHexes(n.player),
+      hexes: openSetupHexes(s, n.player),
       ...setupCounters(s),
     };
   }

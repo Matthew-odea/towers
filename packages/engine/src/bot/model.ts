@@ -2,6 +2,7 @@
 // Mirrors the engine's turn-action rules closely enough for planning; every action the bot
 // finally returns is re-validated against the real engine.
 import { other } from '../hex';
+import { STACK_LIMIT } from '../state';
 import type { Action, AnyState, Card, CpActionType, PlayerId, Terrain } from '../types';
 import { Fight, type FCard, type FightSpec, type QuickResult } from './fight';
 import { DEFAULT_TUNING, type Tuning } from './tuning';
@@ -162,6 +163,10 @@ function removeFrom(p: Pos, h: number, ids: string[]): void {
   }
 }
 
+function room(p: Pos, h: number, n: number): boolean {
+  return p.st[h].length + n <= STACK_LIMIT;
+}
+
 function addTo(ctx: Ctx, p: Pos, h: number, ids: string[], owner: PlayerId): void {
   p.st[h] = [...p.st[h], ...ids];
   p.own[h] = owner;
@@ -180,6 +185,7 @@ export function applyModel(ctx: Ctx, p: Pos, a: Action): Pos | null {
       if (a.cardIds.some((id) => p.locked.includes(id) || !p.st[from].includes(id))) return null;
       const path = a.path.map((h) => IDX[h]);
       if (DIST[from][path[0]] !== 1 || p.own[path[0]] === ctx.foe) return null;
+      if (path.some((h) => !room(p, h, a.cardIds.length))) return null;
       if (path.length === 2) {
         if (a.cardIds.some((id) => ctx.cards[id].kind !== 'cavalry')) return null;
         if (ctx.terrain[path[0]] !== 'plains' || ctx.terrain[path[1]] !== 'plains') return null;
@@ -204,7 +210,7 @@ export function applyModel(ctx: Ctx, p: Pos, a: Action): Pos | null {
         q.reserve = { ...q.reserve, [me]: [...q.reserve[me], ...a.cardIds] };
       } else {
         const to = IDX[a.to];
-        if (DIST[from][to] !== 1 || p.own[to] === ctx.foe) return null;
+        if (DIST[from][to] !== 1 || p.own[to] === ctx.foe || !room(p, to, a.cardIds.length)) return null;
         if (DIST[to][ctx.tower[me]] >= DIST[from][ctx.tower[me]]) return null;
         removeFrom(q, from, a.cardIds);
         addTo(ctx, q, to, a.cardIds, me);
@@ -213,7 +219,7 @@ export function applyModel(ctx: Ctx, p: Pos, a: Action): Pos | null {
     }
     case 'deploy': {
       const tw = ctx.tower[me];
-      if (p.own[tw] === ctx.foe || !canSpend(p, 'deploy', 1)) return null;
+      if (p.own[tw] === ctx.foe || !room(p, tw, 1) || !canSpend(p, 'deploy', 1)) return null;
       if (a.cardIds.length !== 1) return null;
       if (a.cardIds.some((id) => !p.reserve[me].includes(id) || ['wit', 'commander'].includes(ctx.cards[id].kind))) return null;
       const q = clonePos(p);
@@ -235,7 +241,7 @@ export function applyModel(ctx: Ctx, p: Pos, a: Action): Pos | null {
     }
     case 'reinforce': {
       const h = IDX[a.hex];
-      if (p.own[h] !== me || !isFort(p, h) || !canSpend(p, 'reinforce', 3)) return null;
+      if (p.own[h] !== me || !isFort(p, h) || !room(p, h, 1) || !canSpend(p, 'reinforce', 3)) return null;
       if (!p.reserve[me].includes(a.cardId) || ['wit', 'commander'].includes(ctx.cards[a.cardId].kind)) return null;
       if (!supplied(ctx, p, me).has(h)) return null;
       const q = clonePos(p);
@@ -247,7 +253,7 @@ export function applyModel(ctx: Ctx, p: Pos, a: Action): Pos | null {
     case 'spawnWit': {
       const h = IDX[a.hex];
       const wit = p.reserve[me].find((id) => ctx.cards[id].kind === 'wit');
-      if (!wit || NO_SPAWN.has(h) || p.own[h] === ctx.foe || !canSpend(p, 'spawnWit', 1)) return null;
+      if (!wit || NO_SPAWN.has(h) || p.own[h] === ctx.foe || !room(p, h, 1) || !canSpend(p, 'spawnWit', 1)) return null;
       const q = clonePos(p);
       spendOn(q, 'spawnWit', 1);
       q.reserve = { ...q.reserve, [me]: q.reserve[me].filter((x) => x !== wit) };

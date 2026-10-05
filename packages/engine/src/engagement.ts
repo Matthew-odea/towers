@@ -7,6 +7,7 @@ import {
   destroyCards,
   emit,
   enterable,
+  hasRoom,
   hexOf,
   isFortified,
   normalize,
@@ -78,6 +79,8 @@ export function computeRetreatHexes(s: PublicState, e: Engagement): HexKey[] {
   }
   return neighbors(e.target).filter((h) => {
     if (!enterable(s, e.defender, h)) return false;
+    // The whole stack retreats together, so the hex must have room for all of it.
+    if (!hasRoom(s, h, stack.length)) return false;
     for (const b of blockers) if (b === h || areAdjacent(b, h)) return false;
     return true;
   });

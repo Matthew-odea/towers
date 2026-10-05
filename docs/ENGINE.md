@@ -159,7 +159,7 @@ display order), `buildAllCards(), cardName(card)` ("Light Infantry 7", "Archer (
 `cardActivates(card, dice, witNumber), waysToRoll(total)`.
 
 Constants: `PLAYERS, CP_PER_TURN (4), CP_CAP_PER_TYPE (3), CP_ACTION_TYPES, TOWER_WIN_COUNT (3),
-ROUNDS_TO_WIN (2), MAX_SETUP_OTHERS (6, troops per player per setup)`.
+ROUNDS_TO_WIN (2), MAX_SETUP_OTHERS (6, troops per player per setup), STACK_LIMIT (4, cards per hex)`.
 
 Setup helpers (`src/setup.ts`): `nextSetupPlacer(s)` → `{ player, step } | null`,
 `setupEligible(s, player)` (cards that player may place now; empty if it is not their setup
@@ -277,7 +277,7 @@ Mountain lock and engagement state.
 | `casualtyPool(s, engagement, side, result)` | eligible casualties for a side (§12.1, ranged Archer immunity) |
 | `lineOfSight(s, from, target)`, `attackMode(s, cardId, target)` | `'adjacent' \| 'ranged' \| null` |
 | `computeModifiers(s, input)`, `sideActivation(...)`, `resolveDice(...)`, `ALL_ROLLS` | the combat math the engine itself uses |
-| `locate(s, id)`, `hexOf`, `cardHex`, `stackAt`, `stackOwner`, `hexesOf`, `isFortified`, `commandersOf`, `enterable`, `defenderMax` | lookups |
+| `locate(s, id)`, `hexOf`, `cardHex`, `stackAt`, `stackOwner`, `hexesOf`, `isFortified`, `commandersOf`, `enterable`, `hasRoom(s, hex, n)`, `defenderMax` | lookups |
 
 ---
 

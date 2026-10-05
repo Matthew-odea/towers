@@ -1,6 +1,6 @@
 // Open, turn-based round setup (RULINGS §4): who places next, and what they may place.
 import { HOME_EDGE, other } from './hex';
-import { MAX_SETUP_OTHERS, PLAYERS } from './state';
+import { MAX_SETUP_OTHERS, PLAYERS, hasRoom } from './state';
 import type { AnyState, PlayerId, PublicState, SetupStep } from './types';
 
 export interface SetupCounts {
@@ -78,6 +78,15 @@ export function setupCounters(s: AnyState): {
   return { placed, commandersLeft, troopsLeft };
 }
 
-export function setupHexes(player: PlayerId): string[] {
-  return [...HOME_EDGE[player]];
+/** Home-edge hexes that still have room for one more card. */
+export function openSetupHexes(s: PublicState, player: PlayerId): string[] {
+  return HOME_EDGE[player].filter((h) => hasRoom(s, h, 1));
+}
+
+/** `preferred` if it has room, else the open home-edge hex holding the fewest cards (side hexes first). */
+export function setupHexWithRoom(s: PublicState, player: PlayerId, preferred: string): string {
+  if (hasRoom(s, preferred, 1)) return preferred;
+  const open = openSetupHexes(s, player);
+  const n = (h: string) => s.stacks[h]?.length ?? 0;
+  return [...open].sort((a, b) => n(a) - n(b))[0] ?? preferred;
 }

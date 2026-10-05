@@ -3,7 +3,7 @@
 import { CHARACTERS, buildAllCards, buildArmy, waysToRoll } from './cards';
 import { applyAction } from './core';
 import { ALL_HEXES, HOME_EDGE, TOWER, isHex } from './hex';
-import { nextSetupPlacer, setupEligible } from './setup';
+import { nextSetupPlacer, setupEligible, setupHexWithRoom } from './setup';
 import { seedRng } from './rng';
 import { PLAYERS, emptyTurn, isPlayer } from './state';
 import type {
@@ -228,7 +228,8 @@ const FILL_KIND_ORDER = ['light', 'heavy', 'archer', 'cavalry', 'shardbearer'];
  * state plus every event. On each setup turn the acting player uses the first entry of their plan
  * that is legal for the current step. When their plan has nothing usable, Commanders go on their
  * Tower and troops are filled with the least useful eligible card (Light Infantry 2, 3, 4, 10, 5,
- * 9, ... then Heavy Infantry in the same order) on HOME_EDGE[p][0] (red "-2,2", black "0,-2").
+ * 9, ... then Heavy Infantry in the same order) on HOME_EDGE[p][0] (red "-2,2", black "0,-2")
+ * until it holds 4 cards, then on the emptiest home-edge hex with room.
  * Every player always places 6 troops if they have them (setup turns cannot be skipped).
  */
 export function completeSetup(state: MatchState, plan: SetupPlan = {}): { state: MatchState; events: GameEvent[] } {
@@ -259,7 +260,7 @@ export function completeSetup(state: MatchState, plan: SetupPlan = {}): { state:
       cardId = [...eligible].sort(
         (a, b) => kindOrder(a) - kindOrder(b) || ways(a) - ways(b) || (s.cards[a].rank ?? 0) - (s.cards[b].rank ?? 0),
       )[0];
-      hex = HOME_EDGE[p][0];
+      hex = setupHexWithRoom(s, p, HOME_EDGE[p][0]);
     }
     const r = mustApply(s, { type: 'setupPlace', player: p, placements: [{ cardId, hex }] });
     s = r.state;

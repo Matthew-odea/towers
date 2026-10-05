@@ -4,7 +4,7 @@ import { afterVersion, game, hex, myMove, playSetupPlans, shot, tap, version, wa
 // Layout at the minimum supported size (1280x720): controls must stay clickable with a real
 // mouse (no dispatchEvent), even when the clash column is at its tallest.
 
-test('1280x720: Engage stays clickable with the Wit dial over an 8-card defence; chat clears the hand', async ({ browser }) => {
+test('1280x720: Engage stays clickable with the Wit dial over a full 4-card defence; chat clears the hand', async ({ browser }) => {
   const viewport = { width: 1280, height: 720 };
   const a = await (await browser.newContext({ viewport })).newPage();
   const b = await (await browser.newContext({ viewport })).newPage();
@@ -18,15 +18,15 @@ test('1280x720: Engage stays clickable with the Wit dial over an 8-card defence;
   await b.getByLabel('Your name').fill('Bo');
   await b.getByRole('button', { name: 'Join' }).click();
 
-  // Red stacks both Commanders and six troops on 0,2: an 8-card defence. Black keeps Light 6 + Heavy 5
-  // on 0,-2 and puts everything else elsewhere.
+  // Red fills 0,2 to the stack limit (both Commanders, an Archer, Heavy 8): a 4-card defence. Black
+  // keeps Light 6 + Heavy 5 on 0,-2 and puts everything else elsewhere.
   await myMove(a, 'setup');
   await playSetupPlans(a, b, {
     a: {
       cards: Object.fromEntries(
-        ['red-commander-dalinar', 'red-commander-jasnah', 'red-archer-lunamor', 'red-heavy-8', 'red-light-2', 'red-light-3', 'red-light-4', 'red-light-5'].map((id) => [id, '0,2']),
+        ['red-commander-dalinar', 'red-commander-jasnah', 'red-archer-lunamor', 'red-heavy-8'].map((id) => [id, '0,2']),
       ),
-      rest: '0,2',
+      rest: '-2,2',
     },
     b: {
       cards: { 'black-commander-raboniel': '1,-2', 'black-commander-eshonai': '1,-2', 'black-light-6': '0,-2', 'black-heavy-5': '0,-2' },

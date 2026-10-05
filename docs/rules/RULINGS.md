@@ -78,7 +78,8 @@ happens; nothing is hidden.
 4. **Troops**: players then alternate, starting with the first player, each placing **exactly
    one** card per setup turn onto one of their own home-edge hexes, until **each player has
    placed 6** (12 setup turns). Any available non-destroyed card except Commanders and Wit may be
-   placed; stacking is allowed. A player who has run out of eligible cards skips their remaining
+   placed; stacking is allowed up to the stack limit (§6.1: at most 4 cards in a hex, so a full
+   home-edge hex is not offered). A player who has run out of eligible cards skips their remaining
    setup turns *(ruling)*.
 5. Everything not placed starts in **Reserve**. Wit always starts a round in Reserve.
 6. When setup ends, the first player takes the first turn of play.
@@ -108,7 +109,10 @@ happens; nothing is hidden.
 ## 6. Movement
 
 ### 6.1 Stacks
-- Any number of a player's cards may share a hex. Two players' cards never share a hex.
+- **Stack limit: at most 4 cards in a hex** (owner change, 2026-10-05). No action may make a
+  stack bigger than 4: setup placement, Move, Withdraw, Deploy, Reinforce, Spawn Wit and Combat
+  Retreat all need room for every card they bring. Wit counts as a card. Two players' cards
+  never share a hex.
 - A Move/Withdraw picks **any subset** of one player's cards in **one** hex and moves them
   together. The rest stay.
 - You cannot enter a hex containing enemy cards — clear it by fighting first. Winning an
@@ -121,7 +125,8 @@ happens; nothing is hidden.
 ### 6.2 Cavalry 2-hex Plains move and charge
 - If **every** card in the moving group is Cavalry, the group may, as the same Move, enter a
   Plains hex and then continue into one more adjacent Plains hex (both must be enterable —
-  empty or friendly). Tower is not Plains.
+  empty or friendly — and **both must have room** for the whole group under the stack limit:
+  a full friendly hex blocks the pass-through, *owner ruling*). Tower is not Plains.
 - **Charge**: if your **very next action** after such a 2-hex Move is an Engage in which at
   least one of those Cavalry is committed as an attacker, the attacking side has **Advantage**
   for that engagement. Any other action in between (including another Move) cancels the charge.
@@ -277,12 +282,12 @@ Disadvantage.
 
 ### 10.3 Reinforce
 - 3 CP: move exactly 1 card from your Reserve (never Wit; Commanders are never in Reserve) onto
-  one of your Fortified hexes that has a supply line.
+  one of your Fortified hexes that has a supply line and room for it (§6.1).
 
 ### 10.4 Deploy
 - 1 CP: move **exactly 1** Reserve card (not Wit) onto your own Tower (so at most 3 per turn,
   by the 3-CP cap). Not allowed while enemy cards
-  occupy your Tower.
+  occupy your Tower, or while your Tower already holds 4 cards (§6.1).
 
 ## 11. Winning a round
 
@@ -344,7 +349,9 @@ Disadvantage.
   adjacent hex that has no enemy cards and is **not adjacent to (or equal to) any hex
   containing an adjacent committed attacking card**. It cannot split. Mountain lock applies.
   Fortified status is lost (unless it joins a friendly Fortified hex, in which case it is part
-  of that stack). Retreat is optional; if no legal hex exists the stack stays.
+  of that stack). The hex must have room for the **whole** stack under the stack limit (§6.1);
+  a friendly hex it would overfill is not a legal retreat (*owner ruling*). Retreat is optional;
+  if no legal hex exists the stack stays.
 - The engagement ends.
 
 ## 13. Worked examples (all must hold in tests)

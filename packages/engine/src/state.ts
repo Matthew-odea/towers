@@ -19,6 +19,8 @@ export const CP_CAP_PER_TYPE = 3;
 export const TOWER_WIN_COUNT = 3;
 export const ROUNDS_TO_WIN = 2;
 export const MAX_SETUP_OTHERS = 6;
+/** Most cards a player may have in one hex (RULINGS §6.1). */
+export const STACK_LIMIT = 4;
 export const CP_ACTION_TYPES: readonly CpActionType[] = ['move', 'engage', 'deploy', 'withdraw', 'fortify', 'reinforce', 'spawnWit'];
 
 export function isPlayer(p: unknown): p is PlayerId {
@@ -67,6 +69,15 @@ export function enterable(s: PublicState, player: PlayerId, hex: HexKey): boolea
   if (!isHex(hex)) return false;
   const o = stackOwner(s, hex);
   return o === null || o === player;
+}
+
+/** `n` more cards fit in `hex` without its stack going over STACK_LIMIT. */
+export function hasRoom(s: PublicState, hex: HexKey, n: number): boolean {
+  return stackAt(s, hex).length + n <= STACK_LIMIT;
+}
+
+export function fullStackError(hex: HexKey): string {
+  return `Hex ${hex} would hold more than ${STACK_LIMIT} cards (a stack holds at most ${STACK_LIMIT}).`;
 }
 
 export function hexesOf(s: PublicState, player: PlayerId): HexKey[] {

@@ -237,13 +237,33 @@ describe('§4 Round setup', () => {
   it('a 7th troop is never asked for; Wit is never placed at setup', () => {
     let s = seq(fresh(), ...placeCommanders(fresh(), 'black'), ...placeCommanders(fresh(), 'red')).state;
     mustReject(s, place('black', 'black:W', '0,-2'));
-    // 6 troops stacked in one hex is fine.
-    const r = completeSetup(s, { black: ['L2', 'L3', 'L4', 'L5', 'L6', 'L7', 'L8'].map((x) => [`black:${x}`, '0,-2'] as [string, string]) });
-    expect(r.state.stacks['0,-2']).toEqual([c('black:K2'), ...cs('black:L2', 'black:L3', 'black:L4', 'black:L5', 'black:L6', 'black:L7')]);
+    const plan = ['L2', 'L3', 'L4', 'L5', 'L6', 'L7', 'L8'].map((x, i) => [`black:${x}`, i < 3 ? '0,-2' : '2,-2'] as [string, string]);
+    const r = completeSetup(s, { black: plan });
+    expect(r.state.stacks['0,-2']).toEqual([c('black:K2'), ...cs('black:L2', 'black:L3', 'black:L4')]);
+    expect(r.state.stacks['2,-2']).toEqual(cs('black:L5', 'black:L6', 'black:L7'));
     expect(r.state.reserve.black).toContain(c('black:L8'));
     expect(r.state.reserve.black).toContain(c('black:W'));
     s = r.state;
     expect(s.phase).toBe('play');
+  });
+
+  it('a home-edge hex holds at most 4 cards; a full hex is not offered', () => {
+    const s0 = seq(fresh(), ...placeCommanders(fresh(), 'black'), ...placeCommanders(fresh(), 'red')).state;
+    // Black's 0,-2 already holds a Commander; three troops fill it.
+    const s = seq(
+      s0,
+      place('black', 'black:L2', '0,-2'),
+      place('red', 'red:L2', '0,2'),
+      place('black', 'black:L3', '0,-2'),
+      place('red', 'red:L3', '0,2'),
+      place('black', 'black:L4', '0,-2'),
+      place('red', 'red:L4', '0,2'),
+    ).state;
+    expect(s.stacks['0,-2']).toHaveLength(4);
+    expect(mustReject(s, place('black', 'black:L5', '0,-2'))).toMatch(/at most 4/);
+    const d = pendingDecision(s);
+    expect(d.kind === 'setup' && d.hexes).toEqual(['1,-2', '2,-2']);
+    mustApply(s, place('black', 'black:L5', '2,-2'));
   });
 
   it('cannot place the opponent cards, a card twice, destroyed cards, or out of turn', () => {

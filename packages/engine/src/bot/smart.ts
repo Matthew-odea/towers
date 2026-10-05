@@ -11,8 +11,8 @@
 import { computeModifiers } from '../combat';
 import { pendingDecision, validateAction } from '../core';
 import { HOME_EDGE, TOWER, neighbors, other, parseHex } from '../hex';
-import { nextSetupPlacer, setupEligible } from '../setup';
-import { hexOf } from '../state';
+import { nextSetupPlacer, setupEligible, setupHexWithRoom } from '../setup';
+import { hasRoom, hexOf } from '../state';
 import type { Action, AnyState, Engagement, PendingDecision, PlayerId } from '../types';
 import { evaluate } from './evaluate';
 import { DEFAULT_TUNING, type Tuning } from './tuning';
@@ -114,7 +114,7 @@ function smartSetup(s: AnyState, me: PlayerId, w: Tuning): Action | null {
   const tower = TOWER[me];
   const eligible = setupEligible(s, me);
   if (eligible.length === 0) return null;
-  const place = (cardId: string, hex: string): Action => ({ type: 'setupPlace', player: me, placements: [{ cardId, hex }] });
+  const place = (cardId: string, hex: string): Action => ({ type: 'setupPlace', player: me, placements: [{ cardId, hex: setupHexWithRoom(s, me, hex) }] });
   if (n.step === 'commander') return place(eligible[0], tower);
 
   const kind = (id: string) => s.cards[id].kind;
@@ -133,7 +133,7 @@ function smartSetup(s: AnyState, me: PlayerId, w: Tuning): Action | null {
   const foeSideMax = Math.max(0, ...HOME_EDGE[foe].filter((h) => h !== TOWER[foe]).map((h) => foeTroops[h] ?? 0));
   const wantEscorts = foeSideMax >= 4 ? 3 : 2;
 
-  if (escortsPlaced < wantEscorts) {
+  if (escortsPlaced < wantEscorts && hasRoom(s, tower, 1)) {
     const heavy = eligible.filter((id) => kind(id) === 'heavy').sort((a, b) => ways(b) - ways(a));
     const light = eligible.filter((id) => kind(id) === 'light').sort((a, b) => ways(b) - ways(a));
     const escort = heavy[0] ?? light[0];

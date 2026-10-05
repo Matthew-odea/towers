@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { applyAction, pendingDecision, legalSpawnHexes, ALL_HEXES, CP_PER_TURN } from '../../src/index';
+import { applyAction, pendingDecision, legalSpawnHexes, ALL_HEXES, CP_PER_TURN, STACK_LIMIT, deployInfo, moveOptions } from '../../src/index';
 import { buildState, mustApply, mustReject, c, cs, seq, fight, settle, eventsOf, pend, started } from './h';
 
 describe('§5 Turns and Command Points', () => {
@@ -162,6 +162,70 @@ describe('§6.1 Stacks and moving', () => {
     let s = buildState({ board: { '0,1': ['red:L5'] }, terrain: { '0,0': 'forest' } });
     s = mustApply(s, { type: 'move', player: 'red', cardIds: cs('red:L5'), from: '0,1', path: ['0,0'] }).state;
     mustApply(s, { type: 'move', player: 'red', cardIds: cs('red:L5'), from: '0,0', path: ['-1,0'] });
+  });
+});
+
+describe('§6.1 Stack limit: at most 4 cards in a hex', () => {
+  const full = ['red:L2', 'red:L3', 'red:L4', 'red:L5'];
+
+  it('is 4', () => {
+    expect(STACK_LIMIT).toBe(4);
+  });
+
+  it('a Move that would make a stack of 5 is rejected; 4 is fine', () => {
+    const s = buildState({ board: { '0,1': ['red:H2', 'red:H3'], '0,0': ['red:L4', 'red:L5', 'red:L6'] } });
+    const both = { type: 'move' as const, player: 'red' as const, cardIds: cs('red:H2', 'red:H3'), from: '0,1', path: ['0,0'] };
+    expect(mustReject(s, both)).toMatch(/at most 4/);
+    expect(moveOptions(s, 'red', cs('red:H2', 'red:H3'), '0,1').map((o) => o.to)).not.toContain('0,0');
+    const r = mustApply(s, { ...both, cardIds: cs('red:H2') });
+    expect(r.state.stacks['0,0']).toHaveLength(4);
+  });
+
+  it('a Cavalry 2-hex move cannot pass through a full friendly hex', () => {
+    const s = buildState({ board: { '0,2': ['red:V1'], '0,1': full } });
+    const mv = (path: string[]) => ({ type: 'move' as const, player: 'red' as const, cardIds: cs('red:V1'), from: '0,2', path });
+    expect(mustReject(s, mv(['0,1', '0,0']))).toMatch(/at most 4/);
+    mustReject(s, mv(['0,1']));
+    mustApply(buildState({ board: { '0,2': ['red:V1'], '0,1': full.slice(0, 3) } }), mv(['0,1', '0,0']));
+  });
+
+  it('Withdraw, Deploy, Reinforce and Spawn Wit cannot fill a hex past 4', () => {
+    // Withdraw from 0,1 onto a full Tower
+    const t = buildState({ board: { '0,1': ['red:H2'], '-1,2': full } });
+    expect(mustReject(t, { type: 'withdraw', player: 'red', cardIds: cs('red:H2'), from: '0,1', to: '-1,2' })).toMatch(/at most 4/);
+    // Deploy onto a full Tower
+    expect(mustReject(t, { type: 'deploy', player: 'red', cardIds: cs('red:H5') })).toMatch(/at most 4/);
+    expect(deployInfo(t, 'red').legal).toBe(false);
+    // Reinforce a full Fortified hex (supplied from the Tower)
+    const f = buildState({ board: { '-1,2': ['red:K1'], '-1,1': ['red:H2', 'red:H3', 'red:H4', 'red:H5'] }, fortified: ['-1,1'] });
+    expect(mustReject(f, { type: 'reinforce', player: 'red', cardId: c('red:L2'), hex: '-1,1' })).toMatch(/at most 4/);
+    mustApply(buildState({ board: { '-1,2': ['red:K1'], '-1,1': ['red:H2', 'red:H3', 'red:H4'] }, fortified: ['-1,1'] }), {
+      type: 'reinforce',
+      player: 'red',
+      cardId: c('red:L2'),
+      hex: '-1,1',
+    });
+    // Spawn Wit into a full hex
+    const w = buildState({ board: { '0,0': full } });
+    expect(mustReject(w, { type: 'spawnWit', player: 'red', hex: '0,0' })).toMatch(/at most 4/);
+    expect(legalSpawnHexes(w, 'red')).not.toContain('0,0');
+  });
+
+  it('Combat Retreat is not offered into a friendly hex the whole stack would overfill', () => {
+    const s = buildState({
+      board: {
+        '0,1': ['red:L5'],
+        '0,0': ['black:L8', 'black:L9'],
+        '0,-1': ['black:L2', 'black:L3', 'black:L4', 'black:L5'],
+        '1,-1': ['black:H2', 'black:H3', 'black:H4'],
+      },
+      dice: [2, 3],
+    });
+    const r = fight(s, { target: '0,0', atk: ['red:L5'], def: ['black:L8'] });
+    const p = pend(r.state);
+    expect(p.kind).toBe('retreat');
+    expect([...p.hexes].sort()).toEqual(['-1,0', '1,-1']);
+    expect(mustReject(r.state, { type: 'retreat', player: 'black', to: '0,-1' })).toBeTruthy();
   });
 });
 

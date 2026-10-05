@@ -38,6 +38,8 @@ export {
   TOWER_WIN_COUNT,
   ROUNDS_TO_WIN,
   MAX_SETUP_OTHERS,
+  STACK_LIMIT,
+  hasRoom,
   locate,
   hexOf,
   stackAt,
