@@ -29,7 +29,8 @@ test('drag and drop: setup placements and a Deploy', async ({ page }) => {
   await page.goto('/');
   await page.getByLabel('Your name').fill('Dragging Dana');
   await page.getByRole('button', { name: 'Play the bot' }).click();
-  await page.getByRole('group', { name: 'Bot difficulty' }).getByRole('button', { name: 'Easy' }).click();
+  await page.getByRole('radiogroup', { name: 'Bot difficulty' }).getByRole('radio', { name: 'Easy' }).click();
+  await page.getByRole('button', { name: 'Start' }).click();
   await expect(game(page)).toHaveAttribute('data-seat', 'red');
   await myMove(page, 'setup');
 

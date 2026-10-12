@@ -40,10 +40,29 @@
   display: flex;
   gap: var(--sp-3);
 }
-/* "Play the bot" opens into three joined difficulty buttons; the last one chosen is lit. */
+/* "Play the bot" opens a row below: the difficulty (last choice preselected) and Start. */
+.bot-start {
+  display: flex;
+  gap: var(--sp-3);
+  animation: levels-in var(--dur-med) var(--ease-out);
+}
 .bot-levels {
   display: inline-flex;
-  animation: levels-in var(--dur-med) var(--ease-out);
+}
+.btn.is-on {
+  color: var(--parchment);
+  border-color: var(--metal);
+  background: linear-gradient(180deg, var(--slate-600), var(--slate-700));
+}
+/* The chosen difficulty: lighter, with a metal bar under its label. */
+.bot-levels .btn.is-on {
+  color: var(--parchment);
+  border-color: var(--metal);
+  background: linear-gradient(180deg, var(--slate-500), var(--slate-600));
+  box-shadow: var(--shadow-inset), inset 0 -2px 0 var(--metal-hi);
+}
+.bot-levels .btn:not(.is-on) {
+  color: var(--parchment-dim);
 }
 @keyframes levels-in {
   from {
@@ -64,7 +83,7 @@
 .bot-levels .btn:last-child {
   border-radius: 0 var(--r-sm) var(--r-sm) 0;
 }
-.bot-levels .btn.lit {
+.bot-levels .btn.is-on {
   position: relative;
   z-index: 1;
 }

@@ -29,10 +29,12 @@ probably on a voice call.
 ### Landing
 - One input (your name, remembered in localStorage) and three actions: **New game** (creates a
   game and shows the link to copy), **Play the bot**, and a small **Stats** link.
-- **Bot difficulty**: clicking Play the bot turns that button into three joined buttons, **Easy /
-  Medium / Hard**; clicking one starts the game. The last choice is lit and remembered
-  (`towers.botLevel`, default Medium). Rematch keeps the level. In game the opponent reads
-  "Bot · Hard" (the level small and quiet beside the name).
+- **Bot difficulty**: clicking Play the bot opens a row beneath the two buttons: **Easy / Medium /
+  Hard** as one joined choice (a radio group; the last choice is preselected and remembered in
+  `towers.botLevel`, default Medium) and a separate, Stormlight-lit **Start** button that has focus,
+  so Enter starts. Choosing a level never starts the game by itself; Esc closes the row. Rematch
+  keeps the level. In game the opponent reads "Bot · Hard" (the level small and quiet beside the
+  name).
 - The title "Towers" may appear once. Nothing else.
 
 ### Waiting for opponent

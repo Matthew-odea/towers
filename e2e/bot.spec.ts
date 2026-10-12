@@ -6,7 +6,8 @@ test('online game against the bot: setup and three full turns', async ({ page })
   await page.goto('/');
   await page.getByLabel('Your name').fill('Hal');
   await page.getByRole('button', { name: 'Play the bot' }).click();
-  await page.getByRole('group', { name: 'Bot difficulty' }).getByRole('button', { name: 'Medium' }).click();
+  await page.getByRole('radiogroup', { name: 'Bot difficulty' }).getByRole('radio', { name: 'Medium' }).click();
+  await page.getByRole('button', { name: 'Start' }).click();
   await expect(page).toHaveURL(/#\/g\/[a-z0-9]+$/);
   await expect(game(page)).toHaveAttribute('data-seat', 'red');
   await expect(page.locator('.rail--top .who-name')).toHaveText('Bot');
