@@ -84,7 +84,10 @@ export function Landing() {
         </div>
         {problem && <p className="quiet" role="status">{problem}</p>}
       </form>
-      <a className="stats-link" href="#/stats" onClick={() => ready && setName(name)}>Stats</a>
+      <nav className="landing-links">
+        <a className="stats-link" href="#/rules">Rules</a>
+        <a className="stats-link" href="#/stats" onClick={() => ready && setName(name)}>Stats</a>
+      </nav>
     </HeroLayout>
   );
 }

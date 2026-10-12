@@ -1,6 +1,7 @@
 # Towers — Definitive Rules (implementation spec)
 
-This file is the source of truth for the game engine. It consolidates `Towers_Rules_v1.3.md`
+This file is the source of truth for the game engine. Players read the shorter rulebook page
+(`#/rules`, `packages/client/src/app/Rules.tsx`); change both when a rule changes. It consolidates `Towers_Rules_v1.3.md`
 with the owner's clarifications (2026-10-04). Where this file and the v1.3 draft disagree,
 **this file wins**. Items marked *(ruling)* are decisions made where the draft was silent.
 

@@ -80,6 +80,189 @@
   color: var(--parchment);
 }
 
+.landing-links {
+  display: flex;
+  gap: var(--sp-5);
+}
+
+/* ---- rules ---------------------------------------------------------------------------- */
+/* The page scrolls inside itself (the body never does). Contents on the left stay put. */
+.rules {
+  height: 100%;
+  overflow-y: auto;
+  scroll-padding-top: 9vh;
+}
+.rules-inner {
+  display: grid;
+  grid-template-columns: 180px minmax(0, 680px);
+  justify-content: center;
+  gap: var(--sp-8);
+  padding: 12vh var(--sp-6) 40vh;
+}
+.rules-toc {
+  position: sticky;
+  top: 12vh;
+  align-self: start;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  padding-top: 92px;
+}
+.rules-toc button {
+  background: none;
+  border: 0;
+  border-left: 1px solid rgba(216, 201, 159, 0.14);
+  padding: 5px 0 5px 14px;
+  color: var(--parchment-faint);
+  font: inherit;
+  font-size: var(--fs-sm);
+  letter-spacing: 0.04em;
+  text-align: left;
+  cursor: pointer;
+  transition: color var(--dur-fast), border-color var(--dur-fast);
+}
+.rules-toc button:hover {
+  color: var(--parchment-dim);
+}
+.rules-toc button.is-on {
+  color: var(--parchment);
+  border-left-color: var(--metal);
+}
+.rules-title {
+  font-family: var(--font-display);
+  font-weight: 400;
+  font-size: var(--fs-3xl);
+  letter-spacing: 0.08em;
+  line-height: 1;
+  margin: 0 0 var(--sp-5);
+}
+.rules-body {
+  max-width: 680px;
+  font-size: 16px;
+  line-height: 1.6;
+  color: rgba(221, 211, 189, 0.88);
+}
+.rules-body section {
+  padding-top: var(--sp-6);
+}
+.rules-body h2 {
+  font-family: var(--font-display);
+  font-weight: 400;
+  font-size: var(--fs-xl);
+  letter-spacing: 0.04em;
+  color: var(--parchment);
+  margin: 0 0 var(--sp-3);
+  padding-top: var(--sp-5);
+  border-top: var(--hairline);
+}
+.rules-body p {
+  margin: 0 0 var(--sp-4);
+}
+.rules-body ul,
+.rules-body ol {
+  margin: 0 0 var(--sp-4);
+  padding-left: 20px;
+}
+.rules-body li {
+  margin-bottom: var(--sp-2);
+}
+.rules-body li::marker {
+  color: var(--metal);
+}
+.rules-body ol > li::marker {
+  font-family: var(--font-display);
+  color: var(--metal);
+}
+.rules-body li ul {
+  margin: var(--sp-2) 0 0;
+}
+.rules-body b {
+  font-weight: 500;
+  color: var(--parchment);
+}
+.rules-body .dim {
+  color: var(--parchment-faint);
+}
+.rules-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 0 0 var(--sp-5);
+  font-size: var(--fs-md);
+}
+.rules-table th,
+.rules-table td {
+  padding: 9px 12px 9px 0;
+  border-bottom: 1px solid rgba(216, 201, 159, 0.1);
+  text-align: left;
+  vertical-align: top;
+}
+.rules-table thead th {
+  font-weight: 400;
+  font-size: var(--fs-xs);
+  letter-spacing: var(--tracking-caps);
+  text-transform: uppercase;
+  color: var(--parchment-faint);
+}
+.rules-table tbody th {
+  font-weight: 500;
+  color: var(--parchment);
+  white-space: nowrap;
+  width: 1%;
+  padding-right: var(--sp-5);
+}
+.army-glyph {
+  width: 1%;
+  color: var(--metal);
+}
+.army-glyph .glyph {
+  display: block;
+  width: 18px;
+  height: 18px;
+  background: currentColor;
+  -webkit-mask: var(--glyph) center / contain no-repeat;
+  mask: var(--glyph) center / contain no-repeat;
+}
+.army-table td:nth-child(2) {
+  white-space: nowrap;
+}
+.action-table .cost {
+  width: 1%;
+  padding-right: var(--sp-5);
+  font-family: var(--font-display);
+  font-size: var(--fs-lg);
+  line-height: 1;
+  color: var(--metal-hi);
+}
+/* Chance each infantry rank fires on one roll. */
+.rank-odds {
+  display: flex;
+  align-items: flex-end;
+  gap: 14px;
+  margin: var(--sp-2) 0 var(--sp-5);
+}
+.rank-col {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  width: 38px;
+}
+.rank-bar {
+  width: 100%;
+  border-radius: 2px 2px 0 0;
+  background: linear-gradient(to top, var(--metal-lo), var(--metal));
+}
+.rank-num {
+  font-family: var(--font-display);
+  font-size: var(--fs-lg);
+  line-height: 1;
+}
+.rank-pct {
+  font-size: var(--fs-xs);
+  color: var(--parchment-faint);
+}
+
 /* ---- stats ---------------------------------------------------------------------------- */
 .stats {
   gap: var(--sp-5);

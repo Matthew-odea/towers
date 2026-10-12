@@ -4,7 +4,8 @@ export type Route =
   | { name: 'landing' }
   | { name: 'game'; gameId: string }
   | { name: 'offline' }
-  | { name: 'stats' };
+  | { name: 'stats' }
+  | { name: 'rules' };
 
 export function parseRoute(hash: string): Route {
   const h = hash.replace(/^#/, '');
@@ -12,6 +13,7 @@ export function parseRoute(hash: string): Route {
   if (g) return { name: 'game', gameId: decodeURIComponent(g[1]!) };
   if (/^\/offline\b/.test(h)) return { name: 'offline' };
   if (/^\/stats\b/.test(h)) return { name: 'stats' };
+  if (/^\/rules\b/.test(h)) return { name: 'rules' };
   return { name: 'landing' };
 }
 

@@ -51,6 +51,7 @@ export function GameMenu({ conn, onLeave, onCopyLink, onShowInvite }: Props) {
               <button type="button" onClick={() => setConfirm(false)}>Cancel</button>
             </div>
           )}
+          <button type="button" role="menuitem" onClick={() => { window.open('#/rules', '_blank', 'noopener'); setOpen(false); }}>Rules</button>
           <button type="button" role="menuitem" onClick={onLeave}>Leave</button>
         </div>
       )}
