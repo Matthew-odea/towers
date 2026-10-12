@@ -14,8 +14,19 @@ test('rules page: reachable from the landing page; contents scroll to each secti
   }
   // Scrolling to a section never touches the hash route.
   await expect(page).toHaveURL(/#\/rules$/);
+  // The back button stays put while the page scrolls.
+  await expect(page.getByRole('link', { name: 'Back' })).toBeInViewport();
   await page.getByRole('link', { name: 'Back' }).click();
   await expect(page.getByRole('link', { name: 'Rules' })).toBeVisible();
+  // Escape also goes back, from the rules and from the stats page.
+  await page.getByRole('link', { name: 'Rules' }).click();
+  await expect(page.getByRole('heading', { level: 1, name: 'Rules' })).toBeVisible();
+  await page.keyboard.press('Escape');
+  await expect(page).not.toHaveURL(/#\/rules/);
+  await page.getByRole('link', { name: 'Stats' }).click();
+  await expect(page.getByRole('heading', { level: 1, name: 'Stats' })).toBeVisible();
+  await page.keyboard.press('Escape');
+  await expect(page).not.toHaveURL(/#\/stats/);
   expect(errors).toEqual([]);
 });
 

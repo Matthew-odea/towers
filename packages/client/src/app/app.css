@@ -162,17 +162,71 @@
 .rules-body ul,
 .rules-body ol {
   margin: 0 0 var(--sp-4);
-  padding-left: 20px;
+  padding: 0;
 }
 .rules-body li {
+  position: relative;
   margin-bottom: var(--sp-2);
 }
-.rules-body li::marker {
+.rules-body ul > li {
+  padding-left: 22px;
+}
+.rules-body ul > li::before {
+  content: '';
+  position: absolute;
+  left: 4px;
+  top: 0.68em;
+  width: 6px;
+  height: 6px;
+  background: var(--metal);
+  transform: rotate(45deg);
+}
+.rules-body ol {
+  counter-reset: step;
+}
+.rules-body ol > li {
+  counter-increment: step;
+  padding-left: 30px;
+}
+.rules-body ol > li::before {
+  content: counter(step);
+  position: absolute;
+  left: 2px;
+  top: -1px;
+  font-family: var(--font-display);
+  font-size: var(--fs-lg);
+  color: var(--metal-hi);
+}
+/* Rows that lead with a picture instead of a marker. */
+.rules-body ul.rules-icons > li {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--sp-4);
+  padding-left: 0;
+  margin-bottom: var(--sp-4);
+}
+.rules-body ul.rules-icons > li::before {
+  content: none;
+}
+.rules-icons > li > :first-child {
+  flex: none;
+  width: 44px;
+  display: flex;
+  justify-content: center;
   color: var(--metal);
 }
-.rules-body ol > li::marker {
-  font-family: var(--font-display);
-  color: var(--metal);
+.rules-icon {
+  width: 30px;
+  height: 30px;
+  margin-top: 4px;
+}
+.rules-icon-pair {
+  gap: 2px;
+  padding-top: 8px;
+}
+.rules-icon-pair .glyph {
+  width: 20px;
+  height: 20px;
 }
 .rules-body li ul {
   margin: var(--sp-2) 0 0;
@@ -211,17 +265,22 @@
   width: 1%;
   padding-right: var(--sp-5);
 }
-.army-glyph {
-  width: 1%;
-  color: var(--metal);
-}
-.army-glyph .glyph {
+.rules-body .glyph {
   display: block;
-  width: 18px;
-  height: 18px;
   background: currentColor;
   -webkit-mask: var(--glyph) center / contain no-repeat;
   mask: var(--glyph) center / contain no-repeat;
+}
+.army-card,
+.terrain-swatch {
+  width: 1%;
+  padding-right: var(--sp-4) !important;
+}
+.army-table tbody td {
+  vertical-align: middle;
+}
+.terrain-swatch .terrain-hex {
+  display: block;
 }
 .army-table td:nth-child(2) {
   white-space: nowrap;
@@ -229,10 +288,112 @@
 .action-table .cost {
   width: 1%;
   padding-right: var(--sp-5);
-  font-family: var(--font-display);
-  font-size: var(--fs-lg);
-  line-height: 1;
+}
+.rules-cost {
+  display: flex;
+  gap: 4px;
+  padding-top: 3px;
+  min-width: 46px;
+}
+.rules-cost .sphere {
+  width: 14px;
+  height: 14px;
+}
+/* The sample board, home edges outlined. */
+.rules-board {
+  margin: var(--sp-2) 0 var(--sp-5);
+  display: flex;
+  align-items: center;
+  gap: var(--sp-6);
+}
+.rules-board-art {
+  position: relative;
+  flex: none;
+  width: 340px;
+}
+.rules-board-art .board-terrain,
+.rules-board-marks {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+}
+.edge-mark {
+  fill: none;
+  stroke: rgba(221, 211, 189, 0.3);
+  stroke-width: 4;
+  stroke-dasharray: 10 8;
+}
+.edge-mark--mine {
+  stroke: var(--parchment);
+  stroke-dasharray: none;
+}
+.rules-board figcaption,
+.rules-example figcaption {
+  color: var(--parchment-dim);
+  font-size: var(--fs-md);
+}
+/* A worked example: both groups, the dice between them, the outcome below. */
+.rules-example {
+  margin: var(--sp-2) 0 var(--sp-6);
+  padding: var(--sp-4) var(--sp-5) var(--sp-5);
+  border: var(--hairline);
+  border-radius: var(--r-md);
+  background: rgba(17, 21, 26, 0.6);
+}
+.ex-title {
+  display: block;
+  font-size: var(--fs-xs);
+  color: var(--metal);
+  margin-bottom: var(--sp-4);
+}
+.ex-scene {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: center;
+  gap: var(--sp-5);
+  margin-bottom: var(--sp-4);
+}
+.ex-side {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+}
+.ex-side--atk {
+  align-items: flex-end;
+  text-align: right;
+}
+.ex-label,
+.ex-note {
+  font-size: var(--fs-xs);
+  color: var(--parchment-faint);
+}
+.ex-note {
   color: var(--metal-hi);
+}
+.ex-cards {
+  display: flex;
+  gap: 6px;
+}
+.ex-dice {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.die--still {
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.28),
+    inset 0 -3px 6px rgba(0, 0, 0, 0.45),
+    0 4px 10px rgba(0, 0, 0, 0.55);
+}
+.die--faded {
+  opacity: 0.55;
+  filter: saturate(0.6);
+}
+.ex-arrow {
+  color: var(--parchment-faint);
+  font-size: var(--fs-lg);
 }
 /* Chance each infantry rank fires on one roll. */
 .rank-odds {
@@ -278,24 +439,46 @@
   gap: var(--sp-4);
 }
 .back-link {
-  position: absolute;
-  top: var(--sp-4);
+  position: fixed;
+  z-index: var(--z-hud);
+  top: var(--sp-5);
   left: var(--sp-5);
-  width: 44px;
-  height: 44px;
+  width: 56px;
+  height: 56px;
   display: grid;
   place-items: center;
   border-radius: 50%;
-  font-size: 22px;
+  border: var(--hairline);
+  background: var(--slate-950);
+  font-size: 28px;
   line-height: 1;
 }
 .back-link:hover {
-  background: rgba(216, 201, 159, 0.06);
+  background: var(--slate-850);
+  border-color: rgba(216, 201, 159, 0.4);
 }
 .stats-name {
   font-size: var(--fs-xl);
   letter-spacing: 0.1em;
   color: var(--parchment-dim);
+}
+.stats-title {
+  font-family: var(--font-display);
+  font-weight: 400;
+  font-size: var(--fs-3xl);
+  letter-spacing: 0.08em;
+  line-height: 1;
+  margin: 0 0 var(--sp-3);
+}
+.stats-body a.btn {
+  text-decoration: none;
+}
+.stats-ask {
+  display: flex;
+  gap: var(--sp-3);
+}
+.stats-ask .field {
+  flex: 1;
 }
 .record {
   font-family: var(--font-display);
@@ -303,7 +486,31 @@
   line-height: 1;
   display: flex;
   gap: 18px;
-  align-items: baseline;
+  align-items: flex-start;
+}
+.record-cell {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--sp-2);
+}
+.record-cap {
+  font-family: var(--font-ui);
+  font-size: var(--fs-xs);
+  color: var(--parchment-faint);
+}
+.record-sep {
+  line-height: 0.9;
+}
+/* Before the first finished game (or while loading) the record is a faint outline of itself. */
+.record--empty .record-num,
+.record--empty .record-sep {
+  opacity: 0.35;
+}
+.rounds {
+  margin: 0;
+  color: var(--parchment-dim);
+  letter-spacing: 0.04em;
 }
 .record-sep,
 .dim {

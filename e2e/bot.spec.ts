@@ -36,6 +36,8 @@ test('stats page reads the server record for the stored name', async ({ page }) 
   await page.getByLabel('Your name').fill('Statler');
   await page.getByRole('link', { name: 'Stats' }).click();
   await expect(page.locator('.stats-name')).toHaveText('Statler');
-  await expect(page.locator('.record')).toHaveText(/0\s*–\s*0/);
+  await expect(page.locator('.record-num')).toHaveText(['0', '0']);
+  await expect(page.getByText('No finished games yet.')).toBeVisible();
+  await expect(page.getByRole('link', { name: 'Play a game' })).toHaveAttribute('href', '#/');
   await shot(page, 'stats-01-empty');
 });

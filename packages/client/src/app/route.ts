@@ -27,6 +27,17 @@ export function gameLink(gameId: string): string {
   return `${location.origin}${location.pathname}${gamePath(gameId)}`;
 }
 
+/** Escape leaves the page for `path` (the rules and stats pages go back to the landing page). */
+export function useEscapeTo(path: string): void {
+  useEffect(() => {
+    const on = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && !e.defaultPrevented) navigate(path);
+    };
+    window.addEventListener('keydown', on);
+    return () => window.removeEventListener('keydown', on);
+  }, [path]);
+}
+
 export function useRoute(): Route {
   const [route, setRoute] = useState<Route>(() => parseRoute(location.hash));
   useEffect(() => {

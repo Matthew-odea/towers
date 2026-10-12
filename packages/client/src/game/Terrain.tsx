@@ -253,3 +253,32 @@ function TerrainImpl({ terrain, seat }: { terrain: Record<HexKey, TerrainT> | nu
 }
 
 export const TerrainLayer = memo(TerrainImpl);
+
+const FACE: Record<TerrainT, [string, string]> = {
+  plains: ['var(--plains-b)', 'var(--plains-a)'],
+  forest: ['#2a3a2b', 'var(--forest-a)'],
+  mountain: ['#555864', 'var(--mountain-a)'],
+  tower: ['var(--tower-b)', 'var(--tower-a)'],
+};
+
+/** One hex of drawn terrain on its own, `size` px square (the rulebook's legend). */
+export function TerrainHex({ t, size, seed = '0,0' }: { t: TerrainT; size: number; seed?: HexKey }) {
+  const id = `th-${t}`;
+  const box = HEX + 8;
+  const c = { x: 0, y: 0 };
+  return (
+    <svg className="terrain-hex" width={size} height={size} viewBox={`${-box} ${-box - 6} ${box * 2} ${box * 2}`} aria-hidden>
+      <defs>
+        <radialGradient id={id} cx="0.42" cy="0.36" r="0.75">
+          <stop offset="0" stopColor={FACE[t][0]} />
+          <stop offset="1" stopColor={FACE[t][1]} />
+        </radialGradient>
+      </defs>
+      <path d={hexPath({ x: 0, y: CLIFF * 0.5 }, HEX)} fill="#0f1216" />
+      <path d={hexPath(c, HEX)} fill={`url(#${id})`} />
+      {decoration(t, t === 'tower' ? TOWER.red : seed)}
+      <polygon points={polyPoints(hexCorners(c, HEX - 3))} className="tr-bevel" />
+      <polygon points={polyPoints(hexCorners(c, HEX))} className="tr-grout" />
+    </svg>
+  );
+}

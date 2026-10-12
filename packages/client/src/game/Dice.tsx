@@ -69,6 +69,17 @@ export function Die(props: DieProps & { index: 0 | 1 }) {
   return <DieInner key={props.throwKey} {...props} from={props.index} />;
 }
 
+/** A die at rest showing `value`, with no throw (e.g. in the rulebook). */
+export function StillDie({ value, size, faded }: { value: number; size: number; faded?: boolean }) {
+  return (
+    <div className={`die die--still ${faded ? 'die--faded' : ''}`} style={{ ['--die' as string]: `${size}px` }} role="img" aria-label={`${value}`}>
+      {[0, 1, 2, 3, 4, 5, 6, 7, 8].map((i) => (
+        <i key={i} className={PIPS[value].includes(i) ? 'pip' : 'pip pip--off'} />
+      ))}
+    </div>
+  );
+}
+
 export function BlankDie() {
   return (
     <div className="die-slot">
